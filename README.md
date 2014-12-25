@@ -6,4 +6,6 @@ This script searches recursively a tree of files and creates a list of their ed2
 
 Use your Encase keyword file to search for matches in the filenames of known.MET records. The first matched keyword is displayed. Known.met must be transformed to xls file, this can be carried out by [MetViewer](http://www.gaijin.at/en/dlemmetview.php), or Internet Evidence Finder. Your keyword file must be saved in UTF8 encoding. This script tries its best to remove punctutatio characters, brackets etc.
 
+##extractDB
 
+Run this script to extract tables from an Microsoft SQL database. Usage python extractDB.py --server <WINDOWS SERVER NAME> DB <Database Name>. External dependencies are **xlsxwriter** and **pyodbc**.
