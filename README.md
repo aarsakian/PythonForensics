@@ -1,3 +1,8 @@
+##vcardParser
+
+Parses Vcard format files and exports to a xlsx and html file as well. 
+Requires xlsxwriter, vobject, jinja2
+
 ##HashMatcher
 
 This script searches recursively a tree of files and creates a list of their ed2k hashes. Then, it compares the list with the ed2k hashes of records of eMule Known.met. Known.met must be transformed to xls file, this can be carried out by MetViewer or Internet Evidence Finder. If xls is exported by IEF, please remove first column.
