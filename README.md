@@ -13,4 +13,4 @@ Use your Encase keyword file to search for matches in the filenames of known.MET
 
 ##extractDB
 
-Run this script to extract tables from an Microsoft SQL database. Usage python extractDB.py  _WINDOWS SERVER NAME_  _Database Name_. External dependencies are **xlsxwriter** and **pyodbc**. There are additional arguments like enabling threads.
+Run this script to extract tables from an Microsoft SQL database. Usage python extractDB.py  "_WINDOWS SERVER NAME_"  "_Database Name_". External dependencies are **xlsxwriter** and **pyodbc**. There are additional arguments such as enabling threads.
