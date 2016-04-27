@@ -1,9 +1,5 @@
 
-<<<<<<< HEAD
 import pyodbc,csv, xlsxwriter,argparse, os, gc
-=======
-import pyodbc,datetime,csv, xlsxwriter,argparse, os
->>>>>>> eb621ce327a5ec07a6acc133894fdb97eed03894
 from threading import Thread, Lock
 from functools import wraps
 from abc import abstractmethod
@@ -17,18 +13,13 @@ FETCH_SIZE = 20
 MSSQL_INFO = {}
 XLSX_MAX_LEN = 30
 MSSQL_INFO["verbosity"] = False
-<<<<<<< HEAD
 NOTHREADS = 40
-=======
-NOTHREADS = 20
->>>>>>> eb621ce327a5ec07a6acc133894fdb97eed03894
 MSSQL_INFO["driver"] = "SQL Server"
 MSSQL_INFO["PWD"] = None
 MSSQL_INFO["schema"] = "dbo"
 MSSQL_INFO["dbname"] = None
 MSSQL_INFO["built-in dbs"] = ("master", "model", "msdb", "tempdb")
 EXCLUDED_DBS = []
-<<<<<<< HEAD
 
 logfilename = "db"+str(datetime.now()).replace(":","_")+".log"
 logging.basicConfig(filename=logfilename,
@@ -38,8 +29,6 @@ logging.basicConfig(filename=logfilename,
                     level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-=======
->>>>>>> eb621ce327a5ec07a6acc133894fdb97eed03894
 
 def create_connection(func):
 
@@ -123,7 +112,6 @@ def retrieve_data_iter(cursor, *args):
 @create_connection
 def retrieve_database_names(cursor):
     dbs = cursor.execute("SELECT name from sys.DATABASES").fetchall()
-<<<<<<< HEAD
     cursor.close()
     del cursor
     gc.collect()
@@ -141,14 +129,6 @@ def retrieve_table_names(cursor):
 
     gc.collect()
 
-=======
-    return list(db[0] for db in dbs if not db[0] in MSSQL_INFO["built-in dbs"])
-
-@create_connection
-def retrieve_table_names(cursor):
-    schema = MSSQL_INFO["schema"]
-    tables = cursor.tables(schema=schema, tableType="TABLE").fetchall()
->>>>>>> eb621ce327a5ec07a6acc133894fdb97eed03894
     return list(table[2] for table in tables)
 
 
@@ -156,7 +136,6 @@ def retrieve_table_names(cursor):
 def retrieve_column_names(cursor, *args):
          schema = MSSQL_INFO["schema"]
          tablename = args[0]
-<<<<<<< HEAD
          logger.info("retrieving columns for table %s",tablename)
          columns = cursor.columns(table=tablename, schema=schema)
          colnames =  list(column.column_name for column in columns)
@@ -186,28 +165,7 @@ class Writer:
     @abstractmethod
     def write_header(self, colnames):
         pass
-=======
-         columns = cursor.columns(table=tablename, schema=schema)
-         return list(column.column_name for column in columns)
 
-
-
-def create_dirs(database):
-        """try to create necessary folders existing db folders
-        will be treated as they have been parsed"""
-        try:
-            if not os.path.exists(database):
-                os.makedirs(database)
-            else:
-                EXCLUDED_DBS.append(database)
-            os.makedirs(database+"/xlsx")
-            os.makedirs(database+"/csv")
-        except OSError as e:
-            print (e)
-            pass
->>>>>>> eb621ce327a5ec07a6acc133894fdb97eed03894
-
-class Writer:
     @abstractmethod
     def write(self, data):
         """Strategy for write interface"""
@@ -220,16 +178,10 @@ class Writer:
 
 
 
-
-
 class CSVWriter(Writer):
     def __init__(self, dbname, tablename):
         self.filepath = dbname+"/csv/"+tablename+".csv"
-<<<<<<< HEAD
         logger.info("writing to %s", self.filepath)
-=======
-
->>>>>>> eb621ce327a5ec07a6acc133894fdb97eed03894
 
 
     def write_header(self, colnames):
@@ -269,7 +221,6 @@ class CSVWriter(Writer):
 class XLSXWriter(Writer):
     def __init__(self, dbname, tablename):
         self.filepath = dbname+"/xlsx/"+tablename+".xlsx"
-<<<<<<< HEAD
         self.workbook = xlsxwriter.Workbook(self.filepath)
         self.dateformat = self.workbook.add_format({'num_format': 'dd/mm/yyyy H:M:S'})
         self.worksheet = self.workbook.add_worksheet(tablename[:XLSX_MAX_LEN])  # max length of xlsx sheet
@@ -278,19 +229,9 @@ class XLSXWriter(Writer):
 
     def write_header(self, colnames):
         self.worksheet.write_row(0, 0, colnames)
-=======
-        self.tablename = tablename
->>>>>>> eb621ce327a5ec07a6acc133894fdb97eed03894
 
 
-<<<<<<< HEAD
     def write(self,  data):
-=======
-        workbook = xlsxwriter.Workbook(self.filepath)
-        dateformat = workbook.add_format({'num_format': 'dd/mm/yyyy H:M:S'})
-        worksheet = workbook.add_worksheet(self.tablename[:XLSX_MAX_LEN])  # max length of xlsx sheet
-        worksheet.write_row(0, 0, colnames)
->>>>>>> eb621ce327a5ec07a6acc133894fdb97eed03894
         for rid, row in enumerate(data):
             self.write_row(row)
 
@@ -313,27 +254,6 @@ class XLSXWriter(Writer):
 
 
             self.rowid += 1
-
-
-
-class Database:
-    def __init__(self, dbname):
-        self.dbname = dbname
-        self.tables = []
-
-
-
-    @property
-    def noftables(self):
-        return len(self.tables)
-
-
-
-    def find_tables(self):
-        print ("Retrieving table names for db", self.dbname)
-        self.tables = retrieve_table_names()
-
-
 
 
 
@@ -431,15 +351,10 @@ if __name__ == "__main__":
         writers = []
         if MSSQL_INFO["verbosity"]:
             print ("Started parsing table {0}".format(tname))
-<<<<<<< HEAD
         logging.info("Started parsing table {0}".format(tname))
-=======
-
->>>>>>> eb621ce327a5ec07a6acc133894fdb97eed03894
         colnames = retrieve_column_names(tname)
         t = Table(tname, colnames)
 
-<<<<<<< HEAD
 
         writers.append(XLSXWriter(db.dbname, tname))
         writers.append(CSVWriter(db.dbname, tname))
@@ -452,26 +367,15 @@ if __name__ == "__main__":
             if MSSQL_INFO["verbosity"]:
                 print ("Before writing ", len(t.data))
             [w.write(t.data) for w in writers]
-=======
-        writers.append(XLSXWriter(db.dbname, tname))
-        writers.append(CSVWriter(db.dbname, tname))
-        if MSSQL_INFO["verbosity"]:
-            print ("Before writing ", len(t.data))
-        [w.write(t.colnames, t.data) for w in writers]
->>>>>>> eb621ce327a5ec07a6acc133894fdb97eed03894
 
 
 
         lck.decrement()
         lck.total_time()
-<<<<<<< HEAD
         logging.info("Finished parsing table {0} remaining {1} tables out of {2} in {3} secs so far".
                format(tname, lck.remaining, db.noftables, lck.elapsed))
         if MSSQL_INFO["verbosity"]:
            print ("Finished parsing table {0} remaining {1} tables out of {2} in {3} secs so far".
-=======
-        print ("Finished parsing table {0} remaining {1} tables out of {2} in {3} secs so far".
->>>>>>> eb621ce327a5ec07a6acc133894fdb97eed03894
                format(tname, lck.remaining, db.noftables, lck.elapsed))
 
 
@@ -480,18 +384,13 @@ if __name__ == "__main__":
         while True:#consume queue until threads have finished
             tname = queue.get()
             writers = []
-<<<<<<< HEAD
 
             logging.info("Started parsing table {0}".format(tname))
-=======
-            #print ("Started parsing table {0}".format(tname))
->>>>>>> eb621ce327a5ec07a6acc133894fdb97eed03894
             colnames = retrieve_column_names( tname)
             t = Table(tname, colnames)
 
             writers.append(XLSXWriter(db.dbname, tname))
             writers.append(CSVWriter(db.dbname, tname))
-<<<<<<< HEAD
             [w.write_header(t.colnames)  for w in writers]
             if args.memory:
                  for rid, row in enumerate(retrieve_data_iter(tname, dbname)):
@@ -502,8 +401,6 @@ if __name__ == "__main__":
                     print ("Before writing ", len(t.data))
                 [w.write(t.data) for w in writers]
 
-=======
->>>>>>> eb621ce327a5ec07a6acc133894fdb97eed03894
             if MSSQL_INFO["verbosity"]:
                 print ("Before writing ", len(t.data))
             [w.write(t.data) for w in writers]
@@ -516,7 +413,6 @@ if __name__ == "__main__":
                 print ("Finished table {0} remaining to be processed {1} from tables out of {2} in queue  {3} "
                    " {4} secs so far".
                format(tname, lck.remaining, queue.qsize(), db.noftables, lck.elapsed))
-<<<<<<< HEAD
             logging.info("Finished table {0} remaining to be processed {1} from tables out of {2} in queue  {3} "
                    " {4} secs so far".
                format(tname, lck.remaining, queue.qsize(), db.noftables, lck.elapsed))
@@ -553,44 +449,6 @@ if __name__ == "__main__":
                 continue
 
 
-=======
-
-
-            queue.task_done()
-            if lck.remaining == 0:#not terminating always
-                queue.task_done()
-
-
-
-    if args.db:
-        databases = [args.db]
-    else:
-        databases = retrieve_database_names()
-    lck = Locker()
-
-    for dbname in databases:
-        db = Database(dbname)
-        MSSQL_INFO["dbname"] = dbname
-        db.find_tables()
-        create_dirs(db.dbname)
-        if db.dbname not in EXCLUDED_DBS:
-
-            lck.reset(db.noftables)
-
-            if args.threaded:
-                queue = Queue(db.noftables)
-                for table in (sorted(db.tables)):
-                    queue.put(table)
-                for i in range(NOTHREADS):
-                    thread = Thread(target=process_table_threaded)
-                    thread.setDaemon(True)
-                    thread.start()
-
-                queue.join()
-                continue
-
-
->>>>>>> eb621ce327a5ec07a6acc133894fdb97eed03894
 
             else:
                 for table in (sorted(db.tables)):
