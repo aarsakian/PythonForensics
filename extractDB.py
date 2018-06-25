@@ -13,7 +13,7 @@ FETCH_SIZE = 20
 MSSQL_INFO = {}
 XLSX_MAX_LEN = 30
 MSSQL_INFO["verbosity"] = False
-NOTHREADS = 40
+NOTHREADS = 20
 MSSQL_INFO["driver"] = "SQL Server"
 MSSQL_INFO["PWD"] = None
 MSSQL_INFO["schema"] = "dbo"
@@ -97,7 +97,10 @@ def create_connection(func):
 @create_connection
 def retrieve_data_iter(cursor, *args):
         tablename = args[0]
-        cursor = cursor.execute(u"SELECT * FROM "+tablename)
+        #if tablename in ("EmailWatch","Movie2Country","Movie2Genre","Movie2Actor", "Member2Actors", "Member2Movies", "MemberLogs"):
+        #    return
+       
+        cursor = cursor.execute("SELECT * FROM ["+tablename+"]")
         while True:
             rows = cursor.fetchmany(FETCH_SIZE)
 
@@ -337,6 +340,7 @@ if __name__ == "__main__":
 
 
     MSSQL_INFO["servername"] = args.server
+	
     if args.verbose:
         MSSQL_INFO["verbosity"] = True
 
