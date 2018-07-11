@@ -5,6 +5,7 @@ import xlsxwriter
 from email.parser import Parser as EmailParser
 from email import policy
 from pprint import pprint
+from collections import OrderedDict
 
 
 def windowsUnicode(string):
@@ -77,14 +78,14 @@ class LookupEntry:
 	def resolveIP(self):
 		try:
 			obj = ipwhois.IPWhois(self.ipaddress).lookup_rdap()
-		
+
 			try:
 				self.description =  obj['network']['remarks'][0]['description']
 			except TypeError:
 				self.description = "-"
 				
 			self.country = obj['network']['country']
-			#if self.ipaddress == "51.254.76.129":print (obj)
+
 			for key, val in obj['objects'].items():
 
 				if isinstance(val, dict):
@@ -138,14 +139,16 @@ def writeToXLSXfile(xlsxfile, table_data):
 	#logger.info("writing to xlsx file{}".format(xlsxfile)
 	workbook = xlsxwriter.Workbook(xlsxfile)
 	worksheet = workbook.add_worksheet("extracted data")
-	worksheet.write_row(0, 0, ("file", "sender", "receiver",  "date and time sent", "sender ip", "provider", 
+	worksheet.write_row(0, 0, ("file", "From", "To","Delivered To",  "Date", "Ip", "characterization", "received_from_date", "provider", 
 								"country", "provider email", "provider address", "description", "predefined dns name"))
-	for row_idx, (message_file, sender, receiver, sent_date,
-			               sender_provider_ip, name, country, email, address, description, 
-			       predefined_dns_name) in enumerate(table_data):
-		worksheet.write_row(row_idx+1, 0, (message_file, sender, receiver, sent_date, 
-		    sender_provider_ip, name, country, email, address, description, 
-			       predefined_dns_name))
+	for row_idx, (message_file, sender, receiver, delivered_to, sent_date,
+	               ip, received_from_date, name, country, email, address, description, 
+	       predefined_dns_name, ip_source) in enumerate(table_data):
+		
+		worksheet.write_row(row_idx+1, 0, (message_file, sender, 
+				receiver, delivered_to, sent_date, 
+			ip, ip_source, received_from_date, name, country, email, address, description, 
+				predefined_dns_name))
 	workbook.close()
       
                 
@@ -181,14 +184,22 @@ class MailProcessor:
 	
 	def __init__(self):
 		self.received = r"(Received: )from(.+)"
-		self.IP = r"([^\w|^\.]([1-9]\d{1,2}\.\d{1,3}\.\d{1,3}\.\d{1,3}))"
+		self.IP = r"[^\w|^\.]([0-2]?\d{1,2}\.[0-2]?\d{1,2}\.[0-2]?\d{1,2}\.[0-2]?\d{1,3})"
 		self.DNS_Name_from = r"from\s*([\w+\-+\.+]+)\s+" #
 		self.DNS_Name_by = r"by(\s+(\w+\-*\w+\.+\w+)+\s)"
 		self.sender_regex = r"From:(\s+\w+\S+)"
 		self.receiver_regex = r"To:(\s+\w+\S+)"
 		self.IP6 = r"(\w{0,4}\:{1,2}\w{0,4}\:{1,2}\w{0,4}\:{1,2}\w{0,4}\:{1,2}\w{1,4})"
 		self.date_sent_regex = r";(.+)"
+		self.x_originating_ip_regex = r"X-Originating-IP:(.+)([1-9]\d{1,2}\.\d{1,3}\.\d{1,3}\.\d{1,3})"
+		self.delivered_to_regex = r"Delivered-To:(\s+\w+\S+)"
+		self.date_regex = r"Date:(\s+.+)"
 		
+		self.ips = OrderedDict()
+		self.ips6 = OrderedDict()
+		self.dates_time_sent = OrderedDict()
+		
+		self.date_time_sent = ""
 
 	def reader(self, folder):
 		for root, dirs, message_files in os.walk(folder):
@@ -212,31 +223,39 @@ class MailProcessor:
 		for idx, val in enumerate(re.finditer(self.received, header)):
 		
 			self.hops.append(val.group(2))
-				
+	
+	def extract_x_originating_ip(self, header):
+		for idx, val in enumerate(re.finditer(self.x_originating_ip_regex, header)):
+			return val.group(2)		
 	
 	def extract_sender(self, header):
-	
 		for idx, val in enumerate(re.finditer(self.sender_regex, header)):
 			return val.group(1)
 			
 	def extract_receiver(self, header):
-		for idx, val in enumerate(re.finditer(self.receiver_regex, header)):
+		receivers = [val.group(1) for idx, val in enumerate(re.finditer(self.receiver_regex, header))]
+		if receivers:
+			return receivers[-1]
+	
+	def extract_delivered_to(self, header):
+		for idx, val in enumerate(re.finditer(self.delivered_to_regex, header)):
 			return val.group(1)
 	
+	def extract_date(self, header):
+		for idx, val in enumerate(re.finditer(self.date_regex, header)):
+			return val.group(1)
+			
 	def process_hops(self):
-		processed_hops = []
-		
+
+		self.hops.reverse()
 		for idx, hop in enumerate(self.hops):
 			
 			self.dns_from = re.search(self.DNS_Name_from, hop)
 			self.dns_by = re.search(self.DNS_Name_by, hop)
-			self.ips = re.findall(self.IP, hop)
-			self.ips6 = re.findall(self.IP6, hop)
-			self.date_time_sent = re.search(self.date_sent_regex, hop)
-			if self.date_time_sent:
-				self.date_time_sent = self.date_time_sent.group(1).strip()
-			
-				
+			self.ips[idx]= re.findall(self.IP, hop)
+			self.ips6[idx] = re.findall(self.IP6, hop)
+			self.dates_time_sent[idx] = re.findall(self.date_sent_regex, hop)
+							
 			if self.dns_from:
 				self.dns_from = self.dns_from.group(1)
 			
@@ -244,24 +263,42 @@ class MailProcessor:
 			
 				self.dns_by = self.dns_by.group(0)[3:]
 			
-				
-			if self.dns_by or self.dns_from or self.ips or self.ips6:
-				processed_hops.append((self.dns_by, self.ips, self.dns_from, self.ips6, self.date_time_sent))
-				#print ('inserting at', self.dns_from ,"HOP", hop)
 
-		return processed_hops
+	def get_received_from_ip(self):
+		"""returns: received_from_ip
+		       
+		"""
 		
-	def get_sender_provider_ip(self):
-		if self.hops:
-			ips = re.findall(self.IP, self.hops[-1])
-			if ips:
-				return ips[0][1]
-			ips = re.findall(self.IP6, self.hops[-1])
-			if ips:
-				return ips[0]
+		if self.ips:
 
-	def get_sent_date(self):
-		return self.date_time_sent
+			for idx, ips in self.ips.items():
+
+				if ips:
+					ips.reverse()
+					for ip in ips:
+						if not ip.startswith("127") and not ip.startswith("10") and not ip.startswith("192"):
+							return idx, ip
+				else:
+					return None, None
+					
+	def get_received_from_ip6(self):
+		"""returns: received_from_ip
+		       
+		"""
+
+		if self.ips6:
+			for idx, ips6 in self.ips6.items():
+				if ips6:
+					for ip6 in ips6:
+						if ip6.startswith("fe80"):
+							return idx, ip6
+				
+				else:
+					return None, None
+
+	def get_received_from_date(self, loop_idx):
+
+		return self.dates_time_sent[loop_idx][0]
 
 
 def readmsgFiles(folder):
@@ -357,20 +394,41 @@ def process_file(mail_header, message_file, file_path=None):
 	
 	sender = mail_processor.extract_sender(header)
 	receiver = mail_processor.extract_receiver(header)
+	delivered_to = mail_processor.extract_delivered_to(header)
 	
-	sent_date = mail_processor.get_sent_date()
-	sender_provider_ip = mail_processor.get_sender_provider_ip()
+	x_originating_ip = mail_processor.extract_x_originating_ip(header)
+	sent_date = mail_processor.extract_date(header)
 	
-	if sender_provider_ip:
-		print ("performing IP lookup {} ".format(sender_provider_ip))
-	
-		name, country, email, address, description, predefined_dns_name = process_ip(sender_provider_ip)
-	else:
-		name, country, email, address, description, predefined_dns_name = "", "", "", "", "", ""
+	nof_loop, received_from_ip = mail_processor.get_received_from_ip()
 
-	return (message_file, sender, receiver, sent_date,
-	               sender_provider_ip, name, country, email, address, description, 
-	       predefined_dns_name)
+	nof_loop6, received_from_ip6 = mail_processor.get_received_from_ip6()
+	
+	if nof_loop and nof_loop6 and nof_loop > nof_loop6:
+		received_from_ip = received_from_ip6
+		nof_loop = nof_loop6
+	received_from_sent_date = mail_processor.get_received_from_date(nof_loop)
+	
+	if x_originating_ip:
+		print ("performing X Originating IP lookup {} ".format(x_originating_ip))
+		name, country, email, address, description,predefined_dns_name  = process_ip(x_originating_ip)
+		return (message_file, sender, receiver, delivered_to, sent_date,
+	               x_originating_ip, received_from_sent_date, name, country, email, address, description, 
+	       predefined_dns_name, "Source X Originating IP")
+		
+	elif received_from_ip:
+		print ("performing Received from IP lookup {} hop {}".format(received_from_ip, nof_loop))
+		name, country, email, address, description,predefined_dns_name  = process_ip(received_from_ip)
+		print (name, country, email, address, description,predefined_dns_name )
+
+		return (message_file, sender, receiver, delivered_to, sent_date,
+	               str(received_from_ip), received_from_sent_date, name, country, email, address, description, 
+	       predefined_dns_name, "Received from: hop number: {}".format(nof_loop+1))
+	
+	
+	else:
+		return (message_file, sender, receiver, delivered_to, sent_date, "","","",
+		"","","", "", "", "")
+
 
 
 if __name__ == "__main__":
@@ -386,12 +444,13 @@ if __name__ == "__main__":
 	
 	
 	for (mail_header, message_file, file_path) in mail_processor.reader(sys.argv[1]):
-		(message_file, sender, receiver, sent_date,
-	               sender_provider_ip, name, country, email, address, description, 
-	       predefined_dns_name)  = process_file(mail_header, message_file, file_path) 
-		table_data.append((message_file, sender, receiver, sent_date,
-	               sender_provider_ip, name, country, email, address, description, 
-	       predefined_dns_name))
+		(message_file, sender, receiver, delivered_to, sent_date,
+	               provider_ip, received_from_date, name, country, email, address, description, 
+	       predefined_dns_name, ip_source)  = process_file(mail_header, message_file, file_path) 
+		table_data.append((message_file, sender, receiver, delivered_to, sent_date,
+	               provider_ip, received_from_date, name, country, email, address, description, 
+	       predefined_dns_name, ip_source))
+	
 		
 
 
@@ -399,13 +458,12 @@ if __name__ == "__main__":
 	if os.path.isfile(sys.argv[1]):
 		with open(sys.argv[1], 'r') as fp:
 		
-			(message_file, sender, receiver, sent_date,
-	               sender_provider_ip, name, country, email, address, description, 
-	       predefined_dns_name)  = process_file(fp, sys.argv[1])
-	
-		table_data.append((message_file, sender, receiver, sent_date,
-	               sender_provider_ip, name, country, email, address, description, 
-	       predefined_dns_name))
+			(message_file, sender, receiver, delivered_to, sent_date,
+	               ip, received_from_date, name, country, email, address, description, 
+	       predefined_dns_name, ip_source) = process_file(fp, sys.argv[1])
+			table_data.append((message_file, sender, receiver, delivered_to, sent_date,
+	               ip, received_from_date, name, country, email, address, description, 
+	       predefined_dns_name, ip_source))
 	
 	writeToXLSXfile("results.xlsx", table_data)
 	
