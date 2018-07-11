@@ -270,16 +270,17 @@ class MailProcessor:
 		"""
 		
 		if self.ips:
-
+		
 			for idx, ips in self.ips.items():
 
 				if ips:
 					ips.reverse()
 					for ip in ips:
-						if not ip.startswith("127") and not ip.startswith("10") and not ip.startswith("192"):
+						if not ip.startswith("127.") and not ip.startswith("10.") and not ip.startswith("192."):
+							
 							return idx, ip
-				else:
-					return None, None
+				
+		return None, None
 					
 	def get_received_from_ip6(self):
 		"""returns: received_from_ip
@@ -290,15 +291,17 @@ class MailProcessor:
 			for idx, ips6 in self.ips6.items():
 				if ips6:
 					for ip6 in ips6:
-						if ip6.startswith("fe80"):
+						if not ip6.startswith("fe80"):
 							return idx, ip6
 				
-				else:
-					return None, None
+				
+		return None, None
 
 	def get_received_from_date(self, loop_idx):
-
-		return self.dates_time_sent[loop_idx][0]
+		try:
+			return self.dates_time_sent[loop_idx][0]
+		except IndexError:
+			return None
 
 
 def readmsgFiles(folder):
@@ -406,16 +409,17 @@ def process_file(mail_header, message_file, file_path=None):
 	if nof_loop and nof_loop6 and nof_loop > nof_loop6:
 		received_from_ip = received_from_ip6
 		nof_loop = nof_loop6
-	received_from_sent_date = mail_processor.get_received_from_date(nof_loop)
+	
 	
 	if x_originating_ip:
 		print ("performing X Originating IP lookup {} ".format(x_originating_ip))
 		name, country, email, address, description,predefined_dns_name  = process_ip(x_originating_ip)
 		return (message_file, sender, receiver, delivered_to, sent_date,
-	               x_originating_ip, received_from_sent_date, name, country, email, address, description, 
+	               x_originating_ip, "", name, country, email, address, description, 
 	       predefined_dns_name, "Source X Originating IP")
 		
 	elif received_from_ip:
+		received_from_sent_date = mail_processor.get_received_from_date(nof_loop)
 		print ("performing Received from IP lookup {} hop {}".format(received_from_ip, nof_loop))
 		name, country, email, address, description,predefined_dns_name  = process_ip(received_from_ip)
 		print (name, country, email, address, description,predefined_dns_name )
