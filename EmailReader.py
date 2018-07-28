@@ -8,6 +8,16 @@ from pprint import pprint
 from collections import OrderedDict
 
 
+logfilename = str(datetime.now()).replace(":","_")+".log"
+logging.basicConfig(filename=logfilename,
+                    filemode='a',
+                    format='%(asctime)s,  %(name)s %(levelname)s %(message)s',
+                    datefmt='%H:%M:%S',
+                    level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+
+
 def windowsUnicode(string):
     if string is None:
         return None
@@ -143,6 +153,8 @@ class LookupEntry:
 			 self.email, self.address, self.description, self.predefined_dns_name])
 	
 	def get_resolved_ip(self):
+		cached_IPs[self.ipaddress] = self.name, self.country, self.email, self.address, self.description, self.predefined_dns_name
+		
 		return (self.name, self.country,
 			 self.email, self.address, self.description, self.predefined_dns_name)
 			 
@@ -335,7 +347,7 @@ def readmsgFiles(folder):
 			    
 				for k, val in msg.header.items():
 					if k == "Received":
-					#	print (val)
+					
 						dns_from = re.search(DNS_Name_from, val)
 						dns_by = re.search(DNS_Name_by, val)
 						ips = re.findall(IP, val)
@@ -395,7 +407,7 @@ def visualizePaths(message_file, hops, dir=None):
 				except IndexError:
 					pass
 			
-		#	print ("hop", idx+1, dns_by, ip_by, ip_from, dns_from)
+	
 			pathwriter.write(dns_by+" receiver having IP "+ip_by+" reports that the message originated from mail relay server with IP "+
 					 ip_from +" which corresponds to "+dns_from+delimiter)
 				
@@ -403,9 +415,13 @@ def visualizePaths(message_file, hops, dir=None):
 
 
 def process_ip(sender_provider_ip):
-	lookupentry = LookupEntry(sender_provider_ip)
-	lookupentry.resolveIP()
-	return lookupentry.get_resolved_ip()
+	if sender_provider_ip not in cached_IPs.keys():
+		lookupentry = LookupEntry(sender_provider_ip)
+		lookupentry.resolveIP()
+		return lookupentry.get_resolved_ip()
+	else: 
+		print ("using cached entry for IP {}".format(sender_provider_ip))
+		return cached_IPs[sender_provider_ip]
 	
 	
 def process_file(mail_header, message_file, file_path=None):
@@ -435,6 +451,7 @@ def process_file(mail_header, message_file, file_path=None):
 	if x_originating_ip:
 		print ("performing X Originating IP lookup {} ".format(x_originating_ip))
 		name, country, email, address, description,predefined_dns_name  = process_ip(x_originating_ip)
+		
 		return (message_file, sender, receiver, delivered_to, sent_date,
 	               x_originating_ip, "", name, country, email, address, description, 
 	       predefined_dns_name, "Source X Originating IP")
@@ -451,6 +468,7 @@ def process_file(mail_header, message_file, file_path=None):
 	
 	
 	else:
+		print ("no IP found")
 		return (message_file, sender, receiver, delivered_to, sent_date, "","","",
 		"","","", "", "", "")
 
@@ -467,6 +485,7 @@ if __name__ == "__main__":
 	base_dir = os.getcwd()
 	table_data = []
 	
+	cached_IPs = {}
 	
 	for idx, (mail_header, message_file, file_path) in enumerate(mail_processor.reader(sys.argv[1])):
 		(message_file, sender, receiver, delivered_to, sent_date,
@@ -476,7 +495,7 @@ if __name__ == "__main__":
 	               provider_ip, received_from_date, name, country, email, address, description, 
 	       predefined_dns_name, ip_source))
 	
-		if idx == 1:
+		if idx == 10:
 			break
 
 
