@@ -17,6 +17,19 @@ def windowsUnicode(string):
         return unicode(string, 'utf_16_le')
 
 
+def atoi(text):
+    return int(text) if text.isdigit() else text
+
+def natural_keys(text):
+    '''
+    alist.sort(key=natural_keys) sorts in human order
+    http://nedbatchelder.com/blog/200712/human_sorting.html
+    (See Toothy's implementation in the comments)
+    '''
+    return [ atoi(c) for c in re.split('(\d+)', text) ]
+
+
+
 class Message(OleFile.OleFileIO):
 	def __init__(self, filename):
 		OleFile.OleFileIO.__init__(self, filename)
@@ -195,16 +208,12 @@ class MailProcessor:
 		self.delivered_to_regex = r"Delivered-To:(\s+\w+\S+)"
 		self.date_regex = r"Date:(\s+.+)"
 		
-		self.ips = OrderedDict()
-		self.ips6 = OrderedDict()
-		self.dates_time_sent = OrderedDict()
 		
-		self.date_time_sent = ""
 
 	def reader(self, folder):
 		for root, dirs, message_files in os.walk(folder):
 			dirs.sort()
-			for message_file in sorted(message_files):
+			for message_file in sorted(message_files, key=natural_keys):
 				with open(os.path.join(root, message_file), 'r') as fp:
 					yield fp, message_file, root
 	
@@ -213,48 +222,58 @@ class MailProcessor:
 		for line in msg_header.read():
 			header +=  line
 		return header
+		
+		
+class MailHeader:
+	
+	def __init__(self, header):
+		self.header = header
+		self.ips = OrderedDict()
+		self.ips6 = OrderedDict()
+		self.dates_time_sent = OrderedDict()
+		
+		self.date_time_sent = ""
 			
-	def extract_hops(self, header):
-
+	def extract_hops(self, mail_processor):
+		
 		self.hops = []
 		first_hit = False 
-		
 			
-		for idx, val in enumerate(re.finditer(self.received, header)):
+		for idx, val in enumerate(re.finditer(mail_processor.received, self.header)):
 		
 			self.hops.append(val.group(2))
 	
-	def extract_x_originating_ip(self, header):
-		for idx, val in enumerate(re.finditer(self.x_originating_ip_regex, header)):
+	def extract_x_originating_ip(self, mail_processor):
+		for idx, val in enumerate(re.finditer(mail_processor.x_originating_ip_regex, self.header)):
 			return val.group(2)		
 	
-	def extract_sender(self, header):
-		for idx, val in enumerate(re.finditer(self.sender_regex, header)):
+	def extract_sender(self, mail_processor):
+		for idx, val in enumerate(re.finditer(mail_processor.sender_regex, self.header)):
 			return val.group(1)
 			
-	def extract_receiver(self, header):
-		receivers = [val.group(1) for idx, val in enumerate(re.finditer(self.receiver_regex, header))]
+	def extract_receiver(self, mail_processor):
+		receivers = [val.group(1) for idx, val in enumerate(re.finditer(mail_processor.receiver_regex, self.header))]
 		if receivers:
 			return receivers[-1]
 	
-	def extract_delivered_to(self, header):
-		for idx, val in enumerate(re.finditer(self.delivered_to_regex, header)):
+	def extract_delivered_to(self, mail_processor):
+		for idx, val in enumerate(re.finditer(mail_processor.delivered_to_regex, self.header)):
 			return val.group(1)
 	
-	def extract_date(self, header):
-		for idx, val in enumerate(re.finditer(self.date_regex, header)):
+	def extract_date(self, mail_processor):
+		for idx, val in enumerate(re.finditer(mail_processor.date_regex, self.header)):
 			return val.group(1)
 			
-	def process_hops(self):
+	def process_hops(self, mail_processor):
 
 		self.hops.reverse()
 		for idx, hop in enumerate(self.hops):
 			
-			self.dns_from = re.search(self.DNS_Name_from, hop)
-			self.dns_by = re.search(self.DNS_Name_by, hop)
-			self.ips[idx]= re.findall(self.IP, hop)
-			self.ips6[idx] = re.findall(self.IP6, hop)
-			self.dates_time_sent[idx] = re.findall(self.date_sent_regex, hop)
+			self.dns_from = re.search(mail_processor.DNS_Name_from, hop)
+			self.dns_by = re.search(mail_processor.DNS_Name_by, hop)
+			self.ips[idx]= re.findall(mail_processor.IP, hop)
+			self.ips6[idx] = re.findall(mail_processor.IP6, hop)
+			self.dates_time_sent[idx] = re.findall(mail_processor.date_sent_regex, hop)
 							
 			if self.dns_from:
 				self.dns_from = self.dns_from.group(1)
@@ -392,19 +411,21 @@ def process_ip(sender_provider_ip):
 def process_file(mail_header, message_file, file_path=None):
 	print ("reading {0} at {1}".format(message_file, file_path))
 	header = mail_processor.read_header(mail_header)
-	mail_processor.extract_hops(header)
-	mail_processor.process_hops()
 	
-	sender = mail_processor.extract_sender(header)
-	receiver = mail_processor.extract_receiver(header)
-	delivered_to = mail_processor.extract_delivered_to(header)
+	mail_header = MailHeader(header)
+	mail_header.extract_hops(mail_processor)
+	mail_header.process_hops(mail_processor)
 	
-	x_originating_ip = mail_processor.extract_x_originating_ip(header)
-	sent_date = mail_processor.extract_date(header)
+	sender = mail_header.extract_sender(mail_processor)
+	receiver = mail_header.extract_receiver(mail_processor)
+	delivered_to = mail_header.extract_delivered_to(mail_processor)
 	
-	nof_loop, received_from_ip = mail_processor.get_received_from_ip()
+	x_originating_ip = mail_header.extract_x_originating_ip(mail_processor)
+	sent_date = mail_header.extract_date(mail_processor)
+	
+	nof_loop, received_from_ip = mail_header.get_received_from_ip()
 
-	nof_loop6, received_from_ip6 = mail_processor.get_received_from_ip6()
+	nof_loop6, received_from_ip6 = mail_header.get_received_from_ip6()
 	
 	if nof_loop and nof_loop6 and nof_loop > nof_loop6:
 		received_from_ip = received_from_ip6
@@ -419,7 +440,7 @@ def process_file(mail_header, message_file, file_path=None):
 	       predefined_dns_name, "Source X Originating IP")
 		
 	elif received_from_ip:
-		received_from_sent_date = mail_processor.get_received_from_date(nof_loop)
+		received_from_sent_date = mail_header.get_received_from_date(nof_loop)
 		print ("performing Received from IP lookup {} hop {}".format(received_from_ip, nof_loop))
 		name, country, email, address, description,predefined_dns_name  = process_ip(received_from_ip)
 		print (name, country, email, address, description,predefined_dns_name )
@@ -447,7 +468,7 @@ if __name__ == "__main__":
 	table_data = []
 	
 	
-	for (mail_header, message_file, file_path) in mail_processor.reader(sys.argv[1]):
+	for idx, (mail_header, message_file, file_path) in enumerate(mail_processor.reader(sys.argv[1])):
 		(message_file, sender, receiver, delivered_to, sent_date,
 	               provider_ip, received_from_date, name, country, email, address, description, 
 	       predefined_dns_name, ip_source)  = process_file(mail_header, message_file, file_path) 
@@ -455,7 +476,8 @@ if __name__ == "__main__":
 	               provider_ip, received_from_date, name, country, email, address, description, 
 	       predefined_dns_name, ip_source))
 	
-		
+		if idx == 1:
+			break
 
 
 	
