@@ -340,6 +340,7 @@ def readmsgFiles(folder):
 	
 	for messagefile in os.listdir(folder):
 		print ("processing", messagefile)
+		logger.info("processing", messagefile)
 		with open(os.path.join(folder, messagefile), 'rb') as fp:
 			msg = Message(fp)
 			with open (os.path.join(os.curdir, "msgs", messagefile.split(".")[0]+"_header.txt"), 'w') as fw:
@@ -421,11 +422,14 @@ def process_ip(sender_provider_ip):
 		return lookupentry.get_resolved_ip()
 	else: 
 		print ("using cached entry for IP {}".format(sender_provider_ip))
+		logger.info("using cached entry for IP {}".format(sender_provider_ip))
 		return cached_IPs[sender_provider_ip]
 	
 	
 def process_file(mail_header, message_file, file_path=None):
 	print ("reading {0} at {1}".format(message_file, file_path))
+	logger.info("reading {0} at {1}".format(message_file, file_path))
+	
 	header = mail_processor.read_header(mail_header)
 	
 	mail_header = MailHeader(header)
@@ -450,6 +454,7 @@ def process_file(mail_header, message_file, file_path=None):
 	
 	if x_originating_ip:
 		print ("performing X Originating IP lookup {} ".format(x_originating_ip))
+		logger.info("performing X Originating IP lookup {} ".format(x_originating_ip))
 		name, country, email, address, description,predefined_dns_name  = process_ip(x_originating_ip)
 		
 		return (message_file, sender, receiver, delivered_to, sent_date,
@@ -459,8 +464,9 @@ def process_file(mail_header, message_file, file_path=None):
 	elif received_from_ip:
 		received_from_sent_date = mail_header.get_received_from_date(nof_loop)
 		print ("performing Received from IP lookup {} hop {}".format(received_from_ip, nof_loop))
+		logger.info("performing Received from IP lookup {} hop {}".format(received_from_ip, nof_loop))
 		name, country, email, address, description,predefined_dns_name  = process_ip(received_from_ip)
-		print (name, country, email, address, description,predefined_dns_name )
+		#print (name, country, email, address, description,predefined_dns_name )
 
 		return (message_file, sender, receiver, delivered_to, sent_date,
 	               str(received_from_ip), received_from_sent_date, name, country, email, address, description, 
@@ -469,6 +475,7 @@ def process_file(mail_header, message_file, file_path=None):
 	
 	else:
 		print ("no IP found")
+		logger.info("no IP found")
 		return (message_file, sender, receiver, delivered_to, sent_date, "","","",
 		"","","", "", "", "")
 
