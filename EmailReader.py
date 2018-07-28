@@ -1,4 +1,5 @@
-import ipwhois, sys, csv, os, re
+import ipwhois, sys, csv, os, re, logging
+from datetime import datetime
 import olefile as OleFile
 import xlsxwriter
 # Import the email modules we'll need
@@ -502,11 +503,7 @@ if __name__ == "__main__":
 	               provider_ip, received_from_date, name, country, email, address, description, 
 	       predefined_dns_name, ip_source))
 	
-		if idx == 10:
-			break
-
-
-	
+		
 	if os.path.isfile(sys.argv[1]):
 		with open(sys.argv[1], 'r') as fp:
 		
