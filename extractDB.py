@@ -25,10 +25,11 @@ logfilename = "db"+str(datetime.now()).replace(":","_")+".log"
 logging.basicConfig(filename=logfilename,
                     filemode='a',
                     format='%(asctime)s,  %(name)s %(levelname)s %(message)s',
-                    datefmt='%H:%M:%S',
+                    datefmt='%x %H:%M:%S',
                     level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
+pyodbc.pooling = False
 
 def create_connection(func):
 
@@ -93,16 +94,26 @@ def create_connection(func):
 
 
 
-
+#@profile
 @create_connection
 def retrieve_data_iter(cursor, *args):
         tablename = args[0]
-        #if tablename in ("EmailWatch","Movie2Country","Movie2Genre","Movie2Actor", "Member2Actors", "Member2Movies", "MemberLogs"):
-        #    return
-       
-        cursor = cursor.execute("SELECT * FROM ["+tablename+"]")
+        if MSSQL_INFO["verbosity"]:
+            print (tablename)
+        print ("extracting data from table {}".format(tablename))
+
+        try:
+
+            cursor = cursor.execute("SELECT * FROM ["+tablename+"]")
+        except pyodbc.Error as e:
+            logger.error("could not extract data from table {} {}".format(tablename, e))
+
         while True:
-            rows = cursor.fetchmany(FETCH_SIZE)
+            try:
+                rows = cursor.fetchmany(FETCH_SIZE)
+            except MemoryError as e:
+                logger.error("memory error when trying to extract data from table {} {}".format(tablename, e))
+                break
 
             if not rows:
                 cursor.close()
@@ -111,6 +122,7 @@ def retrieve_data_iter(cursor, *args):
                 break
             for row in rows:
                 yield row
+
 
 @create_connection
 def retrieve_database_names(cursor):
@@ -160,6 +172,7 @@ def create_dirs(database):
             os.makedirs(database+"/xlsx")
             os.makedirs(database+"/csv")
         except OSError as e:
+            logger.error("error {}".format(e))
             print (e)
             pass
 
@@ -339,7 +352,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
 
-    MSSQL_INFO["servername"] = args.server
+    MSSQL_INFO["servername"] = args.server #'WIN-PU4LF8SP8JU\SQLEXPRESS'
 	
     if args.verbose:
         MSSQL_INFO["verbosity"] = True
