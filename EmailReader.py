@@ -210,14 +210,15 @@ class MailProcessor:
 	
 	def __init__(self):
 		self.received = r"(Received: )from(.+)"
-		self.IP = r"[^\w|^\.]([0-2]?\d{1,2}\.[0-2]?\d{1,2}\.[0-2]?\d{1,2}\.[0-2]?\d{1,3})"
+		self.IP = r"[^\w|^\.]([0-2]?\d{1,2}\.[0-2]?\d{1,2}\.[0-2]?\d{1,2}\.[0-2]?\d{1,2})"
+		#self.IP = r"[^\W|^\.](25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(?1)){3}" # does not work
 		self.DNS_Name_from = r"from\s*([\w+\-+\.+]+)\s+" #
 		self.DNS_Name_by = r"by(\s+(\w+\-*\w+\.+\w+)+\s)"
 		self.sender_regex = r"From:(\s+\w+\S+)"
 		self.receiver_regex = r"To:(\s+\w+\S+)"
 		self.IP6 = r"(\w{0,4}\:{1,2}\w{0,4}\:{1,2}\w{0,4}\:{1,2}\w{0,4}\:{1,2}\w{1,4})"
 		self.date_sent_regex = r";(.+)"
-		self.x_originating_ip_regex = r"X-Originating-IP:(.+)([1-9]\d{1,2}\.\d{1,3}\.\d{1,3}\.\d{1,3})"
+		self.x_originating_ip_regex = r"X-Originating-IP:(.+)([0-2]\d{1,2}\.\d{1,3}\.\d{1,3}\.\d{1,3})"
 		self.delivered_to_regex = r"Delivered-To:(\s+\w+\S+)"
 		self.date_regex = r"Date:(\s+.+)"
 		
@@ -287,6 +288,8 @@ class MailHeader:
 			self.ips[idx]= re.findall(mail_processor.IP, hop)
 			self.ips6[idx] = re.findall(mail_processor.IP6, hop)
 			self.dates_time_sent[idx] = re.findall(mail_processor.date_sent_regex, hop)
+			
+			
 							
 			if self.dns_from:
 				self.dns_from = self.dns_from.group(1)
@@ -304,7 +307,7 @@ class MailHeader:
 		if self.ips:
 		
 			for idx, ips in self.ips.items():
-
+				print(ips)
 				if ips:
 					ips.reverse()
 					for ip in ips:
@@ -483,7 +486,9 @@ def process_file(mail_header, message_file, file_path=None):
 
 
 if __name__ == "__main__":
-	
+	if len(sys.argv) <2:
+		print ("please provide path to folder")
+		exit
 	try:
 		os.remove('paths.txt')
 	except FileNotFoundError:
