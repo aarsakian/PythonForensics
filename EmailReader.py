@@ -307,7 +307,7 @@ class MailHeader:
 		if self.ips:
 		
 			for idx, ips in self.ips.items():
-				print(ips)
+			
 				if ips:
 					ips.reverse()
 					for ip in ips:
