@@ -14,6 +14,7 @@ from functools import wraps
 
 FETCH_SIZE = 100
 
+ALLOWED_FORMATS = (".accdb", ".mdb", ".mde", ".mpp", ".mpe")
 
 table_data = {}
 
@@ -22,7 +23,7 @@ logfilename = str(datetime.now()).replace(":","_")+".log"
 logging.basicConfig(filename=logfilename,
                     filemode='a',
                     format='%(asctime)s,  %(name)s %(levelname)s %(message)s',
-                    datefmt='%H:%M:%S',
+                    datefmt='%x %H:%M:%S',
                     level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
@@ -79,7 +80,8 @@ def find_mdb_files(folder):
     for root, dirs, files in os.walk(folder):
         dirs.sort()
         for file in sorted(files):
-            if os.path.splitext(file)[-1] in (".mdb", ".mde"):
+          
+            if os.path.splitext(file)[-1] in ALLOWED_FORMATS:
                  yield file, root
 
 
