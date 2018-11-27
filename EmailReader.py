@@ -485,8 +485,8 @@ def process_file(mail_header, message_file, file_path=None):
 
 
 if __name__ == "__main__":
-	if len(sys.argv) <2:
-		print ("please provide path to folder")
+	if len(sys.argv) <3:
+		print ("please provide path to folder and or name of xslx file")
 		exit
 	try:
 		os.remove('paths.txt')
@@ -518,7 +518,7 @@ if __name__ == "__main__":
 	               ip, received_from_date, name, country, email, address, description, 
 	       predefined_dns_name, ip_source))
 	
-	writeToXLSXfile("results.xlsx", table_data)
+	writeToXLSXfile(sys.argv[2], table_data)
 	
 	
 		
