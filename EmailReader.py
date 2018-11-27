@@ -210,7 +210,7 @@ class MailProcessor:
 	
 	def __init__(self):
 		self.received = r"(Received: )from(.+)"
-		self.IP = r"[^\w|^\.]([0-2]?\d{1,2}\.[0-2]?\d{1,2}\.[0-2]?\d{1,2}\.[0-2]?\d{1,2})"
+		self.IP = r"(?<=\[|\s)[0-2]?\d{1,2}\.[0-2]?\d{1,2}\.[0-2]?\d{1,2}\.[0-2]?\d{1,2}(?=\]|\s)"
 		#self.IP = r"[^\W|^\.](25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(?1)){3}" # does not work
 		self.DNS_Name_from = r"from\s*([\w+\-+\.+]+)\s+" #
 		self.DNS_Name_by = r"by(\s+(\w+\-*\w+\.+\w+)+\s)"
@@ -307,7 +307,6 @@ class MailHeader:
 		if self.ips:
 		
 			for idx, ips in self.ips.items():
-			
 				if ips:
 					ips.reverse()
 					for ip in ips:
