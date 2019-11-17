@@ -19,7 +19,8 @@ logging.basicConfig(filename=logfilename,
 logger = logging.getLogger(__name__)
 
 
-START_FROM_COL = 1590828
+START_FROM_COL = 1
+
 
 
 def atoi(text):
@@ -52,68 +53,11 @@ class LookupEntry:
 			
 	def resolveIP(self):
 		try:
-			# after 3 retries sleep for 60 secs
-			obj = ipwhois.IPWhois(self.ipaddress).lookup_rdap(retry_count=3, rate_limit_timeout=60)
-			#pprint(obj)
-		
-			try:
-				self.description =  obj['network']['remarks'][0]['description'].replace("\n", " ")
-			except TypeError:
-				self.description = "-"
-			except IndexError:
-				self.description = "-"
+			# after 3 retries ask Japan and Korea
+			obj = ipwhois.IPWhois(self.ipaddress).lookup_rdap(retry_count=3, 
+									inc_nir=True)
+			self.results_to_dict(obj)
 			
-			self.country = obj['network']['country']
-			self.company_name = obj['network']['name']
-
-			for key, val in obj['objects'].items():
-
-				if isinstance(val, dict) and val['contact']:
-					if val['contact']['address']:
-						try:
-							self.address = val['contact']['address'][0]['value'].\
-							replace("\n", " ")
-						except UnicodeEncodeError:
-							self.address = "encoding error"
-							handleUnicodeError()
-							continue
-						
-					if val['contact']['email']:
-						try:
-							self.email = val['contact']['email'][0]['value']
-						except UnicodeEncodeError:
-							self.email = "encoding error"
-							handleUnicodeError()
-							continue
-					if val['contact']['name']:
-						try:
-							self.contact_name = val['contact']['name']
-						except UnicodeEncodeError:
-							self.contact_name = "encoding error"
-							handleUnicodeError()
-							continue
-				
-					if val['contact']['phone']:
-						for dict_ in val['contact']['phone']:
-							tuple1, tuple2 = dict_.items()
-							_, number = tuple1 
-							_, number_type = tuple2
-							
-							if number_type == 'voice':
-								try:
-									self.contact_phone = number
-								except UnicodeEncodeError:
-									self.contact_phone = "encoding error"
-									handleUnicodeError()
-									continue
-							else:
-								try:
-									self.contact_fax = number
-								except UnicodeEncodeError:
-									self.contact_fax = "encoding error"
-									handleUnicodeError()
-									continue
-							
 		except ipwhois.exceptions.IPDefinedError: 
 			self.address ="Private IP address"
 			self.company_name ="Private IP address"
@@ -121,33 +65,94 @@ class LookupEntry:
 			self.contact_phone = "Private IP address"
 			self.country = "Private IP address"
 			self.description = "Private IP address"
-		except ipwhois.exceptions.HTTPLookupError:
+		except ipwhois.exceptions.HTTPLookupError as e:
 			self.address = "HTTP Lookup Error"
 			self.company_name = "HTTP Lookup Error"
 			self.contact_name =  "HTTP Lookup Error"
 			self.contact_phone = "HTTP Lookup Error"
 			self.country =  "HTTP Lookup Error"
 			self.description = "HTTP Lookup Error"
-		except Exception:
+			logger.warning("HTTP Lookup Error at IP {}".format(self.ipaddress))
+			print(e)
+			
+		except Exception as e:
 			self.address = "General Exception"
 			self.company_name = "General Exception"
 			self.contact_name = "General Exception"
 			self.contact_phone = "General Exception"
 			self.country = "General Exception"
 			self.description = "General Exception"
-			logger.warning("general error")
-			
+			logger.warning("general error {}".format(e))
+
 		cached_IPs[self.ipaddress] = self.country,\
 							self.company_name, self.contact_name, self.contact_phone, self.contact_fax, \
 							self.email, self.address, self.description
-	
+
+	def results_to_dict(self, results):
+		try:
+			self.description =  results['network']['remarks'][0]['description'].replace("\n", " ")
+		except TypeError:
+			self.description = "-"
+		except IndexError:
+			self.description = "-"
 			
-def appendToCSVfile(ipaddress, out_file, timestamp=None):
+		self.country = results['network']['country']
+		self.company_name = results['network']['name']
+
+		for key, val in results['objects'].items():
+
+			if isinstance(val, dict) and val['contact']:
+				if val['contact']['address']:
+					try:
+						self.address = val['contact']['address'][0]['value'].\
+							replace("\n", " ")
+					except UnicodeEncodeError:
+						self.address = "encoding error"
+						handleUnicodeError()
+						continue
+						
+				if val['contact']['email']:
+					try:
+						self.email = val['contact']['email'][0]['value']
+					except UnicodeEncodeError:
+						self.email = "encoding error"
+						handleUnicodeError()
+						continue
+				if val['contact']['name']:
+					try:
+						self.contact_name = val['contact']['name']
+					except UnicodeEncodeError:
+						self.contact_name = "encoding error"
+						handleUnicodeError()
+						continue
+				
+				if val['contact']['phone']:
+					for dict_ in val['contact']['phone']:
+						tuple1, tuple2 = dict_.items()
+						_, number = tuple1 
+						_, number_type = tuple2
+							
+						if number_type == 'voice':
+							try:
+								self.contact_phone = number
+							except UnicodeEncodeError:
+								self.contact_phone = "encoding error"
+								handleUnicodeError()
+								continue
+						else:
+							try:
+								self.contact_fax = number
+							except UnicodeEncodeError:
+								self.contact_fax = "encoding error"
+								handleUnicodeError()
+								continue
+	
 		
+def appendToCSVfile(ipaddress, out_file, timestamp=None):
 	with open(out_file, "a") as csvwriter:
 		writer = csv.writer(csvwriter, delimiter="|")
 		logging.info("Writing data {}".format(ipaddress))
-		writer.writerow([timestamp, *cached_IPs[ipaddress]])
+		writer.writerow([timestamp, ipaddress, *cached_IPs[ipaddress]])
 	
 
 		
@@ -172,7 +177,7 @@ def writeToXLSXfile(xlsxfile, ip_resolved_data):
         
 class ReadIPs:
 	
-	def __init__(self, file_name):
+	def __init__(self, file_name, mode=None):
 		self.file_name = file_name
 	
 	def __iter__(self):
@@ -188,14 +193,21 @@ class ReadIPs:
 			with open(self.file_name, newline='') as txtfile:
 				for row_num, row in enumerate(txtfile.readlines()):
 					yield row_num, "", row.strip().replace("\n", "")
-					
+		
+		elif mode == "Repass":
+			with open(self.file_name, 'r', newline='') as csvfile:
+				ipreader  = csv.reader(csvfile, delimiter='|')
+				for row_num, row in enumerate(ipreader):
+					if row_num >= START_FROM_COL:		
+							yield row_num, row
+
 		else:
 			with open(self.file_name, newline='') as csvfile:
 				ipreader  = csv.reader(csvfile, delimiter=',')
 				for row_num, row in enumerate(ipreader):
 					if row_num >= START_FROM_COL:
 					
-						yield row_num, row[1], row[2]
+						yield row_num, row
       
 
 
@@ -230,23 +242,36 @@ if __name__ == "__main__":
 	cached_IPs = {}
 	ip_resolved_data = {}
 	
+	mode = None
+	
 	out_file = sys.argv[2]
 	if os.path.exists(out_file):
 		os.remove(out_file)
-			
+	
+	
 	with open(out_file, "a") as csvwriter:
 		writer = csv.writer(csvwriter, delimiter="|")
 		writer.writerow(["Date & time", "IP",  "Country", "Provider Name", "Contact Name",
-			 "phone", "fax", "e-mail", "address", "description"])
+				"phone", "fax", "e-mail", "address", "description"])
 	
 	print ("READING", sys.argv[1])
 	
+	if len(sys.argv) >2:
+		mode = sys.argv[3]
 	
-	for row_num, timestamp, ip in ReadIPs(sys.argv[1]):
-		print ("Resolving IP {} from row {}".format(ip, row_num))
-		process_ip(ip)
-		appendToCSVfile(ip, out_file, timestamp)
+	for row_num, vals in ReadIPs(sys.argv[1], mode):
+		ip = vals[1]
+		timestamp = vals[0]
+		if vals[2] == "HTTP Lookup Error":
+			print ("Resolving IP {} from row {}".format(ip, row_num))
+			
+			process_ip(vals[1])
+		else:
 
+			cached_IPs[ip] = vals[2:]
+		appendToCSVfile(ip, out_file, timestamp)
+		
+		
 		
 		
 	
