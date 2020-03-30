@@ -1,7 +1,6 @@
 
-
 from struct import unpack, pack
-from collections import namedtuple
+from dataclasses import dataclass
 import datetime
 import re
 import sys
@@ -29,6 +28,7 @@ FRAME_SIZE = 2**30
 FRAME_HEADER_SIZE = 30
 FIRST_FRAME = 0xfd
 SECONDS_DIFFERENCE = 2
+MIN_DURATION = 1 #secs
 
 FRAME_START_ID_REGEX = re.compile(FRAME_START_ID )
 QUALITY = 12
@@ -53,41 +53,61 @@ class Frames:
 def to_str(date_time):
          return date_time.strftime('%Y-%m-%d %H_%M_%S')
 
-
-class FrameTime(namedtuple('FrameTime',
-                           'year month day hour minutes seconds raw')):
+@dataclass 
+class FrameTime:
+    
+                          
     """
-        holds datetime information use slots for memory efficiency
-        restricts attributes
+        holds datetime information
     """
 
-    __slots__ = ()
+    def __init__(self, year:int,
+                month:int,
+                day:int,
+                hour:int,
+                minutes:int,
+                seconds:int,
+                raw:bytes):
+        self.year = year
+        self.month = month
+        self.day = day
+        self.hour = hour
+        self.minutes = minutes
+        self.seconds = seconds
+        self.raw = raw
+        self.corrupted = False
+        self._to_date()
 
     def __bytes__(self):
         return self.raw.to_bytes(4, byteorder='little')
 
-    def to_date(self):
+    def _to_date(self):
         try:
-            date_time = datetime.datetime(2000+self.year, self.month,
+            self.f_date = datetime.datetime(2000+self.year, self.month,
                                           self.day, self.hour,
                                           self.minutes, self.seconds)
 
         except ValueError as e:
-            logging.error("error parsing date continuing {}".format(e))
-            print("error parsing date continuing")
-            date_str = "corrupted_date_seq.dav"
-        finally:
-            return date_time
+            logging.error("error parsing date {}  {}".format(self.raw, e))
+            self.corrupted = True
+            
+            
 
 
-class FrameHeader(namedtuple('FrameHead', 'start_identifier type channel_ number\
-                       length quality time_frame')):
+@dataclass 
+class FrameHeader:
+    start_identifier: str
+    type:str
+    channel_:int
+    number: int
+    length: int
+    quality:int  
+    time_frame: FrameTime
+
     """
-        holds header information use slots for memory efficiency
-        restricts attributes
+        holds header information 
     """
 
-    __slots__ = ()
 
     def __bytes__(self):
         return pack('<4sHHLLH', *self[:-1]) + \
@@ -98,36 +118,45 @@ class FrameHeader(namedtuple('FrameHead', 'start_identifier type channel_ number
         return self.channel_ + 1
 
     def create_filename(self):
-        date_str = to_str(self.time_frame.to_date())
-        return date_str + "_seq" + str(self.number) + ".dav"
+        return to_str(self.time_frame.f_date) + "_seq" + str(self.number) + ".dav"
 
     def get_path_using_channel(self, path):
         return os.path.join(path, str(self.channel))
 
+    def is_corrupted(self):
+        return self.time_frame.corrupted 
 
-class FrameTail(namedtuple('FrameTail', 'end_identifier length')):
+
+@dataclass
+class FrameTail:
+    end_identifier: str
+    length: int
+
     """
-        holds tail information use slots for memory efficiency
-        restricts attributes
+        holds tail information 
+ 
     """
-    __slots__ = ()
 
     def __bytes__(self):
         return pack('<4sL', *self)
 
 
-class Frame(namedtuple('Frame', 'header content tail')):
+@dataclass
+class Frame:
+    header: FrameHeader
+    content:bytes
+    tail: FrameTail
+    corrupted:bool = False
+
     """
-        holds frame information use slots for memory efficiency
-        restricts attributes
+        holds frame information
     """
-    __slots__ = ()
 
     def __bytes__(self):
         return bytes(self.content)
     
     def date(self):
-        return self.header.time_frame.to_date()
+        return self.header.time_frame.f_date
 
     def is_first(self):
         return self.header.type == FIRST_FRAME
@@ -145,11 +174,15 @@ class Frame(namedtuple('Frame', 'header content tail')):
             os.mkdir(base_path)
         with open(os.path.join(base_path, filename), 'wb') as f:
             f.write(bytes(self))
-            print("created frame {} length {}".format(filename, len(self.content)))
+            now = datetime.datetime.now().strftime('%Y-%m-%d %H_%M_%S')
+            print("{} created frame {} length {}".format(now, filename, len(self.content)))
 
     @property
     def length(self):
         return self.header.length
+
+    def is_corrupted(self):
+        return self.header.is_corrupted()
     
 
 class Parser:
@@ -179,16 +212,27 @@ class Parser:
         while True:
             next(self.read_co)
             raw_data = self.read_co.send((self.file_offset, self.file_offset+BLOCK_SIZE))
-            print(self.file_offset, len(raw_data))
+            print("looping", self.file_offset, len(raw_data))
             if not raw_data:
                 break
             previous_frame = None
          
             for match in FRAME_START_ID_REGEX.finditer(raw_data):
+            
                 self.file_offset = match.start()
                 
-                frame = _create_frame(raw_data[self.file_offset:self.file_offset+FRAME_SIZE]) # guessing
+                #frame = _create_frame(raw_data[self.file_offset:self.file_offset+FRAME_SIZE]) # guessing
+                header = _create_frame_head(raw_data[self.file_offset:self.file_offset+FRAME_HEADER_SIZE])
                 
+                if header.is_corrupted():
+                    logging.warning("frame at {} is corrupted".format(self.file_offset))
+                    print("frame skipped offset {}".format(self.file_offset))
+                    continue
+
+                tail = _create_frame_tail(raw_data[self.file_offset+header.length-8:self.file_offset+header.length])
+                
+                frame =  Frame(header,  raw_data[self.file_offset:self.file_offset+header.length] , tail) 
+
                 if not previous_frame and frame.is_first():
                     file_offset_beg = self.file_offset
                     previous_frame = frame
@@ -197,14 +241,14 @@ class Parser:
                     frames = Frames(prev_frame_node)
                     logging.info("first frame found at {}".format(self.file_offset))
                     continue
-               #frame = _create_frame_fast(raw_data[self.file_offset:self.file_offset+FRAME_SIZE]) # guessing
               
                 if previous_frame:
-                 
+                    
                     time_diff =  frame.date() - previous_frame.date()
-                    logger.info("checking for frame at offset {} sequence {} type {} channel {} time diff {} date {}".format(
-                        self.file_offset, frame.header.number,frame.header.type,  frame.header.channel, time_diff, frame.date()))
-
+                  
+                    #logger.info("checking for frame at offset {} sequence {} type {} channel {} time diff {} date {}".format(
+                    #    self.file_offset, frame.header.number,frame.header.type,  frame.header.channel, time_diff, frame.date()))
+                 
                     if time_diff.seconds < SECONDS_DIFFERENCE and previous_frame.header.channel == frame.header.channel:
                         
                         frame = _concatenate_frames(previous_frame, frame)
@@ -214,35 +258,50 @@ class Parser:
                         prev_frame_node.next = frame_node 
 
                         total_duration += time_diff.seconds
+                      
                     else:
                         file_offset_end = self.file_offset - 1
-                        logger.info("export frame channel {} offset start {} end {} duration".format(previous_frame.header.channel,
-                                                                                            file_offset_beg, file_offset_end, total_duration))
-                        yield previous_frame  
-
+                        logger.info("export channel {} offset start {} end {} duration {}".format(previous_frame.header.channel,
+                                                                                           file_offset_beg, file_offset_end, total_duration))
+                        if total_duration > MIN_DURATION:
+                            yield previous_frame  
+                        else:
+                            logging.info("frame NOT exported REASON:"
+                                         "small duration channel {} offset start {}"
+                                         "end {} duration {}".format(previous_frame.header.channel,
+                                                                                           file_offset_beg, file_offset_end, total_duration))
+                        
                         prev_frame_node = FrameNode(frame)
                         frames = Frames(prev_frame_node)
                         
                         total_duration = 0
                         file_offset_beg = self.file_offset 
-
+                     
                     previous_frame = frame
-               # if frame.length < FRAME_SIZE and frame.header.quality == QUALITY:  # must be valid header    
+              
                #     logger.info("Found frame at offset {} length {} ".format(self.file_offset, frame.length))    
      
             self.file_offset += BLOCK_SIZE
                 
 
 def _concatenate_frames(previous_frame, frame):
-    return Frame._make([frame.header, previous_frame.content + frame.content, frame.tail])
+    return Frame(frame.header, previous_frame.content + frame.content, frame.tail)
 
 
 def _create_frame(raw_data):
-       
+    t1 = time.time()
     header = _create_frame_head(raw_data[:FRAME_HEADER_SIZE])
+    t2 = time.time()
+    print("header  created ",   t2-t1)
     raw_data = raw_data[:header.length] # reset ending
     tail = _create_frame_tail(raw_data[-8:])
-    return Frame._make([header, raw_data, tail])
+    t3 = time.time()
+    print("tail  created ",   t3-t2)
+    frame =  Frame(header, raw_data, tail)
+    t4 = time.time()
+    print('frame crated', t4-t3, t)
+    
+    return frame
 
 
 def _create_frame_fast(raw_data):
@@ -271,10 +330,9 @@ def _create_frame_time(raw_data):
     hour = (raw_data & 126976) >> 12
     minutes = (raw_data & 4032) >> 6
     seconds = (raw_data & 63)
+    return FrameTime(year, month, day, hour, minutes, seconds, raw_data)
+    
   
-    return FrameTime._make(
-        [year, month, day, hour, minutes, seconds, raw_data])
-
 
 def _create_frame_head(raw_data):
     start_identifier, type, channel, number, length = \
@@ -284,14 +342,12 @@ def _create_frame_head(raw_data):
     quality = int.from_bytes(raw_data[29:30], byteorder='big')
     frame_time = _create_frame_time(frame_time_data)
    
-    return FrameHeader._make(
-        [start_identifier, type, channel, number, length, quality, frame_time ])
+    return FrameHeader(start_identifier, type, channel, number, length, quality, frame_time)
 
 
 def _create_frame_tail(raw_data):
-    return FrameTail._make(unpack('<4sL', raw_data))
-
-
+    end_identifier, tail = unpack('<4sL', raw_data)
+    return FrameTail(end_identifier, tail)
 
 
 
