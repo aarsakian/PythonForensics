@@ -37,6 +37,16 @@ QUALITY = 12
 BLOCK_SIZE = 2*1000*1000*1024
 
 
+def convert_raw_time_to_dhfs_format(raw_data):
+    year = raw_data >> 26
+    month = (raw_data & 62914560) >> 22
+    day = (raw_data & 4063232) >> 17
+    hour = (raw_data & 126976) >> 12
+    minutes = (raw_data & 4032) >> 6
+    seconds = (raw_data & 63)
+    return year, month, day, hour, minutes, seconds
+
+
 class FrameNode:
     def __init__(self, frame):
         self.frame = frame
@@ -53,6 +63,7 @@ class Frames:
 def to_str(date_time):
          return date_time.strftime('%Y-%m-%d %H_%M_%S')
 
+
 @dataclass 
 class FrameTime:
     
@@ -66,15 +77,13 @@ class FrameTime:
                 day:int,
                 hour:int,
                 minutes:int,
-                seconds:int,
-                raw:bytes):
+                seconds:int):
         self.year = year
         self.month = month
         self.day = day
         self.hour = hour
         self.minutes = minutes
         self.seconds = seconds
-        self.raw = raw
         self.corrupted = False
         self._to_date()
 
@@ -88,7 +97,7 @@ class FrameTime:
                                           self.minutes, self.seconds)
 
         except ValueError as e:
-            logging.error("error parsing date {}  {}".format(self.raw, e))
+            logging.error("error parsing date   {}".format(e))
             self.corrupted = True
             
             
@@ -96,18 +105,18 @@ class FrameTime:
 
 @dataclass 
 class FrameHeader:
-    start_identifier: str
-    type:str
-    channel_:int
-    number: int
-    length: int
-    quality:int  
-    time_frame: FrameTime
-
     """
         holds header information 
     """
+    def __init__(self, raw:bytes, corrupted:bool):
+        self.raw = raw
+        self.corrupted = False
+        self.start_identifier, self.type, self.channel, self.number, self.length = \
+            unpack('<4sHHLL', raw[:16])
 
+        frame_time_raw = int.from_bytes(raw[16:20], byteorder='little')
+        self.quality = int.from_bytes(raw[29:30], byteorder='big')
+        self.frame_time = FrameTime(convert_raw_time_to_dhfs_format(frame_time_raw))
 
     def __bytes__(self):
         return pack('<4sHHLLH', *self[:-1]) + \
@@ -143,14 +152,16 @@ class FrameTail:
 
 @dataclass
 class Frame:
-    header: FrameHeader
-    content:bytes
-    tail: FrameTail
-    corrupted:bool = False
+
 
     """
         holds frame information
     """
+    def __init__(self, content:bytes, corrupted:bool):
+        self.content = content
+        self.header = FrameHeader(content[:FRAME_HEADER_SIZE])
+        self.tail = FrameTail(content[- 8:])
+        self.corrupted = False
 
     def __bytes__(self):
         return bytes(self.content)
@@ -222,16 +233,13 @@ class Parser:
                 self.file_offset = match.start()
                 
                 #frame = _create_frame(raw_data[self.file_offset:self.file_offset+FRAME_SIZE]) # guessing
-                header = _create_frame_head(raw_data[self.file_offset:self.file_offset+FRAME_HEADER_SIZE])
-                
-                if header.is_corrupted():
+
+                frame = Frame(raw_data[self.file_offset:self.file_offset+FRAME_SIZE])
+
+                if frame.is_corrupted():
                     logging.warning("frame at {} is corrupted".format(self.file_offset))
                     print("frame skipped offset {}".format(self.file_offset))
                     continue
-
-                tail = _create_frame_tail(raw_data[self.file_offset+header.length-8:self.file_offset+header.length])
-                
-                frame =  Frame(header,  raw_data[self.file_offset:self.file_offset+header.length] , tail) 
 
                 if not previous_frame and frame.is_first():
                     file_offset_beg = self.file_offset
