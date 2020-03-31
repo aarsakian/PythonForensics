@@ -300,7 +300,7 @@ class Parser:
                         if total_duration > MIN_DURATION:
                             frames.tail = previous_frame
                             frames.duration = total_duration
-                            yield frame
+                            yield frames
                          
                         else:
                             logging.info("frame NOT exported REASON:"
