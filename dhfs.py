@@ -246,6 +246,7 @@ class Parser:
                 yield f.read(data_length)
 
     def find_frames(self):
+        round = 0
         while True:
             next(self.read_co)
             raw_data = self.read_co.send((self.file_offset, BLOCK_SIZE))
@@ -298,8 +299,8 @@ class Parser:
                         #frame = Frame(previous_frame.content + frame.content, frame.header, frame.tail)
                     else:
                         file_offset_end = self.file_offset - 1
-                        logger.info("export channel {} offset start {} end {} duration {}".format(previous_frame.header.channel,
-                                                                                           file_offset_beg, file_offset_end, total_duration))
+                     #   logger.info("export channel {} offset start {} end {} duration {}".format(previous_frame.header.channel,
+                     #                                                                      file_offset_beg, file_offset_end, total_duration))
                         if total_duration > MIN_DURATION:
                             frames.tail = previous_frame
                             frames.duration = total_duration
@@ -317,7 +318,10 @@ class Parser:
 
                    
                     previous_frame = frame
-                 
+            
+            
+            self.file_offset += round*BLOCK_SIZE  
+            round += 1
                #     logger.info("Found frame at offset {} length {} ".format(self.file_offset, frame.length))    
      
            
