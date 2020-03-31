@@ -133,7 +133,7 @@ class FrameHeader:
         return os.path.join(path, str(self.channel))
 
     def is_corrupted(self):
-        return self.time_frame.corrupted 
+        return self.time_frame.corrupted
 
 
 @dataclass
@@ -193,7 +193,7 @@ class Frame:
         return self.header.length
 
     def is_corrupted(self):
-        return self.header.is_corrupted()
+        return self.header.corrupted
     
 
 class Parser:
