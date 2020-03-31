@@ -47,17 +47,32 @@ def convert_raw_time_to_dhfs_format(raw_data):
     return year, month, day, hour, minutes, seconds
 
 
-class FrameNode:
-    def __init__(self, frame):
-        self.frame = frame
-        self.next = None
-        self.prev = None
-
-
 
 class Frames:
-    def __init__(self, head):
-        self.head = None
+    def __init__(self, head, tail=None, duration=0):
+        self.head = head
+        self.tail = tail
+        self.duration = duration
+
+    def write(self, path):
+        frame = self.head
+        tail_frame = self.tail 
+        
+        fname = to_str(frame.date()) + "_" + to_str(tail_frame.date()) + "____" + str(frame.start) + "----" + str(tail_frame.end) + ".dav"
+        base_path = frame.header.get_path_using_channel(path)
+
+        content = frame.content
+        while(frame.next):
+            frame = frame.next
+            content += frame.content
+      
+        if not os.path.exists(base_path):
+            os.mkdir(base_path)
+        
+        with open(os.path.join(base_path, fname), 'wb') as f:
+            f.write(content)
+            now = datetime.datetime.now().strftime('%Y-%m-%d %H_%M_%S')
+            print("{} created frame {} length {}".format(now, fname, len(content)))
 
 
 def to_str(date_time):
@@ -108,15 +123,16 @@ class FrameHeader:
     """
         holds header information 
     """
-    def __init__(self, raw:bytes, corrupted:bool):
+    def __init__(self, raw):
         self.raw = raw
         self.corrupted = False
-        self.start_identifier, self.type, self.channel, self.number, self.length = \
+        unpack('<4sHHLL', raw[:16])
+        self.start_identifier, self.type, self.channel_, self.number, self.length = \
             unpack('<4sHHLL', raw[:16])
 
         frame_time_raw = int.from_bytes(raw[16:20], byteorder='little')
         self.quality = int.from_bytes(raw[29:30], byteorder='big')
-        self.frame_time = FrameTime(convert_raw_time_to_dhfs_format(frame_time_raw))
+        self.time_frame = FrameTime(*convert_raw_time_to_dhfs_format(frame_time_raw))
 
     def __bytes__(self):
         return pack('<4sHHLLH', *self[:-1]) + \
@@ -138,13 +154,14 @@ class FrameHeader:
 
 @dataclass
 class FrameTail:
-    end_identifier: str
-    length: int
+    raw:bytes
 
     """
         holds tail information 
  
     """
+    def __init__(self, raw):
+        self.end_identifier, self.tail = unpack('<4sL', raw)
 
     def __bytes__(self):
         return pack('<4sL', *self)
@@ -152,16 +169,23 @@ class FrameTail:
 
 @dataclass
 class Frame:
-
+ 
 
     """
         holds frame information
     """
-    def __init__(self, content:bytes, corrupted:bool):
+
+    def __init__(self, content:bytes, header:FrameHeader,
+                tail:FrameTail):
         self.content = content
-        self.header = FrameHeader(content[:FRAME_HEADER_SIZE])
-        self.tail = FrameTail(content[- 8:])
-        self.corrupted = False
+        self.header = header
+        self.tail = tail
+        self.prev = None
+        self.next = None
+
+    def set_offsets(self, start, end):
+        self.start = start
+        self.end = end
 
     def __bytes__(self):
         return bytes(self.content)
@@ -193,7 +217,7 @@ class Frame:
         return self.header.length
 
     def is_corrupted(self):
-        return self.header.corrupted
+        return self.header.is_corrupted()
     
 
 class Parser:
@@ -229,24 +253,29 @@ class Parser:
             previous_frame = None
          
             for match in FRAME_START_ID_REGEX.finditer(raw_data):
-            
+               
                 self.file_offset = match.start()
                 
-                #frame = _create_frame(raw_data[self.file_offset:self.file_offset+FRAME_SIZE]) # guessing
+             
+                header = FrameHeader(raw_data[self.file_offset:self.file_offset+FRAME_HEADER_SIZE])      
 
-                frame = Frame(raw_data[self.file_offset:self.file_offset+FRAME_SIZE])
-
-                if frame.is_corrupted():
+                if header.is_corrupted():
                     logging.warning("frame at {} is corrupted".format(self.file_offset))
                     print("frame skipped offset {}".format(self.file_offset))
                     continue
+       
+                tail = FrameTail(raw_data[self.file_offset+header.length- 8:self.file_offset+header.length])
+     
+                frame = Frame(raw_data[self.file_offset:self.file_offset+header.length], header, tail)
+                
+                frame.set_offsets(self.file_offset, self.file_offset+header.length)
 
                 if not previous_frame and frame.is_first():
                     file_offset_beg = self.file_offset
                     previous_frame = frame
-                    prev_frame_node = FrameNode(frame)
+                  
                     total_duration = 0 
-                    frames = Frames(prev_frame_node)
+                    frames = Frames(frame)
                     logging.info("first frame found at {}".format(self.file_offset))
                     continue
               
@@ -254,114 +283,46 @@ class Parser:
                     
                     time_diff =  frame.date() - previous_frame.date()
                   
-                    #logger.info("checking for frame at offset {} sequence {} type {} channel {} time diff {} date {}".format(
-                    #    self.file_offset, frame.header.number,frame.header.type,  frame.header.channel, time_diff, frame.date()))
+                  #  logger.info("checking for frame at offset {} sequence {} type {} channel {} time diff {} date {}".format(
+                 #       self.file_offset, frame.header.number,frame.header.type,  frame.header.channel, time_diff, frame.date()))
                  
                     if time_diff.seconds < SECONDS_DIFFERENCE and previous_frame.header.channel == frame.header.channel:
-                        
-                        frame = _concatenate_frames(previous_frame, frame)
-                        
-                        frame_node = FrameNode(frame)
-                        frame_node.prev = prev_frame_node
-                        prev_frame_node.next = frame_node 
+     
+                        frame.prev = previous_frame
+                        previous_frame.next = frame
 
                         total_duration += time_diff.seconds
-                      
+                        #frame = Frame(previous_frame.content + frame.content, frame.header, frame.tail)
                     else:
                         file_offset_end = self.file_offset - 1
                         logger.info("export channel {} offset start {} end {} duration {}".format(previous_frame.header.channel,
                                                                                            file_offset_beg, file_offset_end, total_duration))
                         if total_duration > MIN_DURATION:
-                            yield previous_frame  
+                            frames.tail = previous_frame
+                            frames.duration = total_duration
+                            yield frame
+                         
                         else:
                             logging.info("frame NOT exported REASON:"
                                          "small duration channel {} offset start {}"
                                          "end {} duration {}".format(previous_frame.header.channel,
                                                                                            file_offset_beg, file_offset_end, total_duration))
-                        
-                        prev_frame_node = FrameNode(frame)
-                        frames = Frames(prev_frame_node)
-                        
+                      
+                        frames = Frames(frame)
                         total_duration = 0
                         file_offset_beg = self.file_offset 
-                     
+
+                   
                     previous_frame = frame
-              
+                 
                #     logger.info("Found frame at offset {} length {} ".format(self.file_offset, frame.length))    
      
             self.file_offset += BLOCK_SIZE
                 
 
-def _concatenate_frames(previous_frame, frame):
-    return Frame(frame.header, previous_frame.content + frame.content, frame.tail)
-
-
-def _create_frame(raw_data):
-    t1 = time.time()
-    header = _create_frame_head(raw_data[:FRAME_HEADER_SIZE])
-    t2 = time.time()
-    print("header  created ",   t2-t1)
-    raw_data = raw_data[:header.length] # reset ending
-    tail = _create_frame_tail(raw_data[-8:])
-    t3 = time.time()
-    print("tail  created ",   t3-t2)
-    frame =  Frame(header, raw_data, tail)
-    t4 = time.time()
-    print('frame crated', t4-t3, t)
-    
-    return frame
-
-
-def _create_frame_fast(raw_data):
-    start_identifier, type, channel, number, length = \
-        unpack('<4sHHLL', raw_data[:16])
-    frame_time_data = int.from_bytes(raw_data[16:20], byteorder='little')
-    quality = int.from_bytes(raw_data[29:30], byteorder='big')
-    year = frame_time_data >> 26
-    month = (frame_time_data & 62914560) >> 22
-    day = (frame_time_data & 4063232) >> 17
-    hour = (frame_time_data & 126976) >> 12
-    minutes = (frame_time_data & 4032) >> 6
-    seconds = (frame_time_data & 63)
-    date_time = datetime.datetime(2000+year, month,
-                                          day, hour,
-                                          minutes, seconds)
-    date_str = date_time.strftime('%Y-%m-%d %H_%M_%S')
-    return channel, number, date_str, raw_data[:length]
-    
-
-def _create_frame_time(raw_data):
-  
-    year = raw_data >> 26
-    month = (raw_data & 62914560) >> 22
-    day = (raw_data & 4063232) >> 17
-    hour = (raw_data & 126976) >> 12
-    minutes = (raw_data & 4032) >> 6
-    seconds = (raw_data & 63)
-    return FrameTime(year, month, day, hour, minutes, seconds, raw_data)
-    
-  
-
-def _create_frame_head(raw_data):
-    start_identifier, type, channel, number, length = \
-        unpack('<4sHHLL', raw_data[:16])
-   
-    frame_time_data = int.from_bytes(raw_data[16:20], byteorder='little')
-    quality = int.from_bytes(raw_data[29:30], byteorder='big')
-    frame_time = _create_frame_time(frame_time_data)
-   
-    return FrameHeader(start_identifier, type, channel, number, length, quality, frame_time)
-
-
-def _create_frame_tail(raw_data):
-    end_identifier, tail = unpack('<4sL', raw_data)
-    return FrameTail(end_identifier, tail)
-
-
-
 def produce_n_consume_frames(data, output_folder, start_offset):
     parser = Parser(data, start_offset)
-    [frame.write(output_folder) for frame in parser.find_frames()]
+    return len([frames.write(output_folder) for frames in parser.find_frames()])
       
 
 def produce_n_consume_frames_fast(data, output_folder, start_offset):
@@ -405,7 +366,7 @@ if __name__ == "__main__":
         start_offset = 0
 
     #produce_n_consume_frames_fast(sys.argv[1], sys.argv[2], start_offset)
-    produce_n_consume_frames(sys.argv[1], sys.argv[2], start_offset)
+    nof_frames = produce_n_consume_frames(sys.argv[1], sys.argv[2], start_offset)
         
     t2 = time.time()
 
@@ -421,4 +382,8 @@ if __name__ == "__main__":
 
     t4 = time.time()
     print("Extraction process completed!")
-    print(" took " + str(t2 - t1) + " seconds vs for asyncio" +str(t4-t3) )
+    fsize = os.stat(sys.argv[1]).st_size - start_offset
+    duration = t2 - t1
+    rate = fsize/(1024*1000*duration)
+    logging.info(" processed {} bytes in {} rate {} MB/sec from which {} frames extracted ".format(str(fsize), str(duration), str(rate), str(nof_frames)))
+    print(" processed {} bytes in {} rate {} MB/sec from which {} frames extracted ".format(str(fsize), str(duration), str(rate), str(nof_frames)))
