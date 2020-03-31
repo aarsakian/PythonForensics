@@ -248,7 +248,7 @@ class Parser:
     def find_frames(self):
         while True:
             next(self.read_co)
-            raw_data = self.read_co.send((self.file_offset, self.file_offset+BLOCK_SIZE))
+            raw_data = self.read_co.send((self.file_offset, BLOCK_SIZE))
             logging.info("block from {} to {} ".format(self.file_offset, self.file_offset+len(raw_data)))
 
             if not raw_data:
