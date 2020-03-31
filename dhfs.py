@@ -320,7 +320,7 @@ class Parser:
                  
                #     logger.info("Found frame at offset {} length {} ".format(self.file_offset, frame.length))    
      
-            self.file_offset += frame.length # start from last frame 
+           
                 
 
 def produce_n_consume_frames(data, output_folder, start_offset):
