@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 FRAME_START_ID = b'\x44\x48\x41\x56' # DHAV
 FRAME_END_ID = 0x6468676
 FRAME_SIZE = 2**30
+TAIL_FRAME_SIZE = 8
 FRAME_HEADER_SIZE = 30
 FIRST_FRAME = 0xfd
 SECONDS_DIFFERENCE = 2
@@ -154,14 +155,15 @@ class FrameHeader:
 
 @dataclass
 class FrameTail:
-    raw:bytes
-
     """
         holds tail information 
  
     """
-    def __init__(self, raw):
-        self.end_identifier, self.tail = unpack('<4sL', raw)
+    def __init__(self, raw:bytes, corrupted:bool=False):
+        if len(raw) == TAIL_FRAME_SIZE:
+            self.end_identifier, self.tail = unpack('<4sL', raw)
+        else:
+            self.corrupted = True
 
     def __bytes__(self):
         return pack('<4sL', *self)
@@ -217,7 +219,7 @@ class Frame:
         return self.header.length
 
     def is_corrupted(self):
-        return self.header.is_corrupted()
+        return self.header.is_corrupted() or self.tail.corrupted
     
 
 class Parser:
@@ -247,7 +249,8 @@ class Parser:
         while True:
             next(self.read_co)
             raw_data = self.read_co.send((self.file_offset, self.file_offset+BLOCK_SIZE))
-            print("looping", self.file_offset, len(raw_data))
+            logging.info("block from {} to {} ".format(self.file_offset, self.file_offset+len(raw_data)))
+
             if not raw_data:
                 break
             previous_frame = None
