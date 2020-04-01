@@ -8,6 +8,12 @@ import os
 import time
 import asyncio
 import logging
+import ffmpeg
+import threading
+import concurrent
+from threading import Thread
+from queue import Queue
+
 #import pyewf
 
 
@@ -21,6 +27,8 @@ logger = logging.getLogger(__name__)
 
 
 #print (pyewf.get_version())
+
+NTHREADS = 10
 
 FRAME_START_ID = b'\x44\x48\x41\x56' # DHAV
 FRAME_END_ID = 0x6468676
@@ -36,6 +44,36 @@ QUALITY = 12
 
 
 BLOCK_SIZE = 2*1000*1000*1024
+
+
+class Dav2MP4Pipe(Queue):
+    def __init__(self, dav_file, output_folder, channel):
+   
+        self.dav_file = dav_file
+        self.mp4_file = dav_file.split(".")[0] + ".mp4"
+        self.output_folder =output_folder
+        self.channel = channel
+
+ 
+def consumer_frames(output_folder):
+    while True:
+      
+        try:
+            dav_file, channel = queue.get()
+            mp4_file = dav_file.split(".")[0] + ".mp4"
+            logging.info("converting file {}".format(dav_file))
+            print("converting file {}".format(dav_file))
+
+            out, err = ffmpeg.input(os.path.join(output_folder, str(channel), dav_file))\
+            .output(os.path.join(output_folder, str(channel), mp4_file))\
+            .run(capture_stdout=True, capture_stderr=True)
+           
+            logging.info("out {}".format(out))
+            logging.info("err {}".format(err))
+            queue.task_done()
+        except ffmpeg.Error as e:
+            print(e)
+       
 
 
 def convert_raw_time_to_dhfs_format(raw_data):
@@ -59,8 +97,10 @@ class Frames:
         frame = self.head
         tail_frame = self.tail 
         
-        fname = to_str(frame.date()) + "_" + to_str(tail_frame.date()) + "____" + str(frame.start) + "----" + str(tail_frame.end) + ".dav"
+        self.fname = to_str(frame.date()) + "_" + to_str(tail_frame.date()) + "____" + str(frame.start) + "----" + str(tail_frame.end) + ".dav"
         base_path = frame.header.get_path_using_channel(path)
+        
+        self.channel = frame.header.channel
 
         content = frame.content
         while(frame.next):
@@ -70,10 +110,10 @@ class Frames:
         if not os.path.exists(base_path):
             os.mkdir(base_path)
         
-        with open(os.path.join(base_path, fname), 'wb') as f:
+        with open(os.path.join(base_path, self.fname), 'wb') as f:
             f.write(content)
             now = datetime.datetime.now().strftime('%Y-%m-%d %H_%M_%S')
-            print("{} created frame {} length {}".format(now, fname, len(content)))
+            print("{} created frame {} length {}".format(now, self.fname, len(content)))
 
 
 def to_str(date_time):
@@ -327,9 +367,19 @@ class Parser:
            
                 
 
-def produce_n_consume_frames(data, output_folder, start_offset):
+def producer_frames(data, output_folder, start_offset, queue):
     parser = Parser(data, start_offset)
-    return len([frames.write(output_folder) for frames in parser.find_frames()])
+
+    nof_frames = 0
+
+    for frames in parser.find_frames():
+      frames.write(output_folder)
+      queue.put((frames.fname, frames.channel))
+          
+      nof_frames += 1
+    return nof_frames
+        
+        
       
 
 def produce_n_consume_frames_fast(data, output_folder, start_offset):
@@ -376,8 +426,20 @@ if __name__ == "__main__":
     if fsize < BLOCK_SIZE:
         BLOCK_SIZE = fsize
 
-    nof_frames = produce_n_consume_frames(sys.argv[1], sys.argv[2], start_offset)
-        
+    queue = Queue()
+
+    for i in range(NTHREADS):
+       thread = Thread(target=consumer_frames, args=(sys.argv[2],))
+       thread.setDaemon(True)
+       thread.start()
+
+    nof_frames = producer_frames(sys.argv[1], sys.argv[2], start_offset, queue)
+
+
+    queue.join()
+    
+
+   
     t2 = time.time()
 
     t3 = time.time()
