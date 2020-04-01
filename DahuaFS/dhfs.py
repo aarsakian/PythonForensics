@@ -372,7 +372,10 @@ if __name__ == "__main__":
     else:
         start_offset = 0
 
-    #produce_n_consume_frames_fast(sys.argv[1], sys.argv[2], start_offset)
+    fsize = os.stat(sys.argv[1]).st_size - start_offset
+    if fsize < BLOCK_SIZE:
+        BLOCK_SIZE = fsize
+
     nof_frames = produce_n_consume_frames(sys.argv[1], sys.argv[2], start_offset)
         
     t2 = time.time()
@@ -389,7 +392,7 @@ if __name__ == "__main__":
 
     t4 = time.time()
     print("Extraction process completed!")
-    fsize = os.stat(sys.argv[1]).st_size - start_offset
+
     duration = t2 - t1
     rate = fsize/(1024*1000*duration)
     logging.info(" processed {} bytes in {} rate {} MB/sec from which {} frames extracted ".format(str(fsize), str(duration), str(rate), str(nof_frames)))
