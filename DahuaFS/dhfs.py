@@ -57,7 +57,6 @@ class Dav2MP4Pipe(Queue):
  
 def consumer_frames(output_folder):
     while True:
-      
         try:
             dav_file, channel = queue.get()
             mp4_file = dav_file.split(".")[0] + ".mp4"
@@ -68,11 +67,13 @@ def consumer_frames(output_folder):
             .output(os.path.join(output_folder, str(channel), mp4_file))\
             .run(capture_stdout=True, capture_stderr=True)
            
-            logging.info("out {}".format(out))
+            #logging.info("out {}".format(out))s
             logging.info("err {}".format(err))
-            queue.task_done()
+           
         except ffmpeg.Error as e:
             print(e)
+        finally:
+            queue.task_done()
        
 
 
@@ -114,6 +115,7 @@ class Frames:
             f.write(content)
             now = datetime.datetime.now().strftime('%Y-%m-%d %H_%M_%S')
             print("{} created frame {} length {}".format(now, self.fname, len(content)))
+            logging.info("{} created frame {} length {}".format(now, self.fname, len(content)))
 
 
 def to_str(date_time):
