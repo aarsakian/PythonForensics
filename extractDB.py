@@ -6,12 +6,14 @@ from abc import abstractmethod
 from time import  time
 from queue import Queue
 from memory_profiler import profile
-import logging
+import logging, tracemalloc
 from datetime import datetime
 
 FETCH_SIZE = 20
 MSSQL_INFO = {}
 XLSX_MAX_LEN = 30
+TABLE = None
+SKIP_TABLES = []
 MSSQL_INFO["verbosity"] = False
 NOTHREADS = 20
 MSSQL_INFO["driver"] = "SQL Server"
@@ -25,11 +27,10 @@ logfilename = "db"+str(datetime.now()).replace(":","_")+".log"
 logging.basicConfig(filename=logfilename,
                     filemode='a',
                     format='%(asctime)s,  %(name)s %(levelname)s %(message)s',
-                    datefmt='%x %H:%M:%S',
+                    datefmt='%H:%M:%S',
                     level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-pyodbc.pooling = False
 
 def create_connection(func):
 
@@ -94,26 +95,13 @@ def create_connection(func):
 
 
 
-#@profile
 @create_connection
 def retrieve_data_iter(cursor, *args):
         tablename = args[0]
-        if MSSQL_INFO["verbosity"]:
-            print (tablename)
-        print ("extracting data from table {}".format(tablename))
-
-        try:
-
-            cursor = cursor.execute("SELECT * FROM ["+tablename+"]")
-        except pyodbc.Error as e:
-            logger.error("could not extract data from table {} {}".format(tablename, e))
-
+       
+        cursor = cursor.execute("SELECT * FROM ["+tablename+"]")
         while True:
-            try:
-                rows = cursor.fetchmany(FETCH_SIZE)
-            except MemoryError as e:
-                logger.error("memory error when trying to extract data from table {} {}".format(tablename, e))
-                break
+            rows = cursor.fetchmany(FETCH_SIZE)
 
             if not rows:
                 cursor.close()
@@ -122,7 +110,6 @@ def retrieve_data_iter(cursor, *args):
                 break
             for row in rows:
                 yield row
-
 
 @create_connection
 def retrieve_database_names(cursor):
@@ -143,8 +130,13 @@ def retrieve_table_names(cursor):
 
 
     gc.collect()
-
-    return list(table[2] for table in tables)
+    
+    if TABLE:
+        return list(table[2] for table in tables if table[2] == TABLE)
+    elif SKIP_TABLES:
+        return list(table[2] for table in tables if table[2] not in SKIP_TABLES)
+    else:
+        return list(table[2] for table in tables)
 
 
 @create_connection
@@ -162,20 +154,14 @@ def retrieve_column_names(cursor, *args):
 
 
 def create_dirs(database):
-        """try to create necessary folders existing db folders
+    """try to create necessary folders existing db folders
         will be treated as they have been parsed"""
-        try:
-            if not os.path.exists(database):
-                os.makedirs(database)
-            else:
-                EXCLUDED_DBS.append(database)
-            os.makedirs(database+"/xlsx")
-            os.makedirs(database+"/csv")
-        except OSError as e:
-            logger.error("error {}".format(e))
-            print (e)
-            pass
-
+		
+    os.makedirs(database, exist_ok = True)
+    os.makedirs(database+"/xlsx", exist_ok = True)
+    os.makedirs(database+"/csv", exist_ok = True)
+          
+       
 class Writer:
 
     @abstractmethod
@@ -191,20 +177,21 @@ class Writer:
     def write_row(self, data):
         """strategy when we desire to be memory efficient write in steps"""
         pass
+    
+    def file_exists(self):
+        return os.path.exists(self.filepath)
 
 
 
 class CSVWriter(Writer):
     def __init__(self, dbname, tablename):
-        self.filepath = dbname+"/csv/"+tablename+".csv"
+        self.filepath = os.path.join(dbname, "csv", tablename+".csv")
         logger.info("writing to %s", self.filepath)
-
 
     def write_header(self, colnames):
         with open(self.filepath, 'w+', newline='', encoding="utf-8") as csvfile:
             tablewriter = csv.writer(csvfile, delimiter=',')
             tablewriter.writerow(colnames)
-
 
     def _create_csv_list(self, row):
         csv_list = []
@@ -215,7 +202,6 @@ class CSVWriter(Writer):
                 csv_list.append(data)
         return csv_list
 
-
     def write(self, data):
         with open(self.filepath, 'a+', newline='', encoding="utf-8") as csvfile:
             tablewriter = csv.writer(csvfile, delimiter=',')
@@ -225,29 +211,40 @@ class CSVWriter(Writer):
                 csv_list = self._create_csv_list(row)
                 tablewriter.writerow(csv_list)
 
-
     def write_row(self, row):
+        
+        if MSSQL_INFO["verbosity"]:
+            print ("file opened ", self.filepath)
         with open(self.filepath, 'a+', newline='', encoding="utf-8") as csvfile:
             tablewriter = csv.writer(csvfile, delimiter=',')
             csv_list = self._create_csv_list(row)
+            
             tablewriter.writerow(csv_list)
+            time2 = tracemalloc.take_snapshot()
+       
+        if MSSQL_INFO["verbosity"]:
+            print ("file closed ", self.filepath)
+            top_stats = time2.compare_to(self.time1, 'lineno')
+            for stat in top_stats[10:]:
+                print(stat)
 
 
 
 class XLSXWriter(Writer):
     def __init__(self, dbname, tablename):
-        self.filepath = dbname+"/xlsx/"+tablename+".xlsx"
+        self.filepath = os.path.join(dbname,"xlsx", tablename+".xlsx")
         self.workbook = xlsxwriter.Workbook(self.filepath)
         self.dateformat = self.workbook.add_format({'num_format': 'dd/mm/yyyy H:M:S'})
         self.worksheet = self.workbook.add_worksheet(tablename[:XLSX_MAX_LEN])  # max length of xlsx sheet
         self.rowid = 0
         logger.info("writing to %s", self.filepath)
-
+    
     def write_header(self, colnames):
         self.worksheet.write_row(0, 0, colnames)
 
 
     def write(self,  data):
+        
         for rid, row in enumerate(data):
             self.write_row(row)
 
@@ -255,11 +252,12 @@ class XLSXWriter(Writer):
 
 
     def write_row(self, data):
+         
             for cid, col in enumerate(data):
                 if isinstance(col, datetime):
 
                     self.worksheet.write(self.rowid + 1, cid, col, self.dateformat)
-                elif isinstance(col, bytearray):  # encoding issues
+                elif isinstance(col, bytearray) or isinstance(col, bytes):  # encoding issues
 
                     try:
                         self.worksheet.write_string(self.rowid + 1, cid, col.decode('utf-8'))
@@ -300,18 +298,14 @@ class Table:
     def __init__(self,  tablename, colnames):
         self.tablename = tablename
         self.colnames = colnames
-        self.data = []
-
-
-     
-
-
+        
     def get_data(self):
         """parse data from table rows"""
-        for rid, row in enumerate(retrieve_data_iter(self.tablename, dbname)):
-            self.data.append(row)
         if MSSQL_INFO["verbosity"]:
-            print ("Data for ", len(self.data), self.tablename)
+            print ("Data for ", self.tablename)
+        return [row for rid, row in enumerate(retrieve_data_iter(self.tablename, dbname))]
+          
+       
 
 
 
@@ -347,8 +341,11 @@ if __name__ == "__main__":
     parser.add_argument("--db", help="Specify database name")
     parser.add_argument("--threaded",help="default non threaded",type=bool)
     parser.add_argument("--verbose", help="enhanced output")
+    parser.add_argument("--table", help="extract only a table from a database")
+    parser.add_argument("--skiptables",  help="extract all tables from a database except the ones specified need to be comma seperated!")
     parser.add_argument("--fetchsize", help="how many records will be fetched for each query", type=int)
     parser.add_argument("--memory", help="reduce memory footprint", type=bool)
+    
     args = parser.parse_args()
 
 
@@ -358,6 +355,18 @@ if __name__ == "__main__":
         MSSQL_INFO["verbosity"] = True
 
 
+    if args.db and args.table:
+        TABLE = args.table
+    elif args.table and not args.db:
+        print("Please select a database first")
+        exit(0)
+	
+    if args.db and args.skiptables:
+        SKIP_TABLES = args.skiptables.split(',')
+        logging.info("skipped tables {}".format(SKIP_TABLES))
+    elif args.skiptables and not args.db:
+        print("Please select a database first")
+        exit(0)
 
     if args.fetchsize:
         FETCH_SIZE = args.fetchsize
@@ -377,13 +386,14 @@ if __name__ == "__main__":
         writers.append(CSVWriter(db.dbname, tname))
         [w.write_header(t.colnames)  for w in writers]
         if args.memory:
+
             for rid, row in enumerate(retrieve_data_iter(tname, dbname)):
                 [w.write_row(row) for w in writers]
         else:
-            t.get_data()
+            
             if MSSQL_INFO["verbosity"]:
-                print ("Before writing ", len(t.data))
-            [w.write(t.data) for w in writers]
+                print ("Before writing ")
+            [w.write(t.get_data()) for w in writers]
 
 
 
@@ -413,14 +423,14 @@ if __name__ == "__main__":
                  for rid, row in enumerate(retrieve_data_iter(tname, dbname)):
                     [w.write_row(row) for w in writers]
             else:
-                t.get_data()
+               
                 if MSSQL_INFO["verbosity"]:
-                    print ("Before writing ", len(t.data))
-                [w.write(t.data) for w in writers]
+                    print ("Before writing ")
+                [w.write(t.get_data()) for w in writers]
 
             if MSSQL_INFO["verbosity"]:
-                print ("Before writing ", len(t.data))
-            [w.write(t.data) for w in writers]
+                print ("Before writing ")
+            [w.write(t.get_data()) for w in writers]
 
 
 
@@ -464,8 +474,6 @@ if __name__ == "__main__":
                     thread.start()
                 queue.join()
                 continue
-
-
 
             else:
                 for table in (sorted(db.tables)):
