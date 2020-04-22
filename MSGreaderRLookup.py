@@ -134,7 +134,7 @@ def resolveIPs(paths):
 
 
 def readfilegen(txtfile):
-	with open(txtfile, "r") as txtfile:
+	with open(txtfile, "r", encoding='utf-8') as txtfile:
 		for line in txtfile.readlines():
 			yield preprocess(line)
 		
@@ -166,7 +166,7 @@ class MailProcessor:
 		for root, dirs, message_files in os.walk(folder):
 			dirs.sort()
 			for message_file in sorted(message_files):
-				with open(os.path.join(root, message_file), 'r') as fp:
+				with open(os.path.join(root, message_file), 'r', encoding='utf-8') as fp:
 					yield fp, message_file, root
 			
 	def extract_hops(self, msg_header, message_file):
@@ -252,7 +252,7 @@ def readmsgFiles(folder):
 
 def visualizePaths(message_file, hops, dir=None):
 	
-	with open('paths.txt', 'a') as pathwriter:
+	with open('paths.txt', 'a', encoding='utf-8') as pathwriter:
 		
 		pathwriter.write(dir+"/"+message_file+": ")
 		for idx, (dns_by, ips, dns_from, ips6) in enumerate(hops[::-1]):

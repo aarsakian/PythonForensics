@@ -10,13 +10,17 @@ from collections import OrderedDict
 
 
 logfilename = str(datetime.now()).replace(":","_")+".log"
-logging.basicConfig(filename=logfilename,
-                    filemode='a',
+
+
+
+logging.basicConfig( filemode='a',
                     format='%(asctime)s,  %(name)s %(levelname)s %(message)s',
                     datefmt='%H:%M:%S',
                     level=logging.DEBUG)
-logger = logging.getLogger(__name__)
 
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.FileHandler(filename=logfilename, 
+                                                 encoding='utf-8'))
 
 
 def windowsUnicode(string):
@@ -101,6 +105,7 @@ class LookupEntry:
 	
 	def resolveIP(self):
 		try:
+		
 			obj = ipwhois.IPWhois(self.ipaddress).lookup_rdap()
 
 			try:
@@ -228,7 +233,7 @@ class MailProcessor:
 		for root, dirs, message_files in os.walk(folder):
 			dirs.sort()
 			for message_file in sorted(message_files, key=natural_keys):
-				with open(os.path.join(root, message_file), 'r') as fp:
+				with open(os.path.join(root, message_file), 'r', encoding='utf-8') as fp:
 					yield fp, message_file, root
 	
 	def read_header(self, msg_header):
@@ -344,7 +349,7 @@ def readmsgFiles(folder):
 	for messagefile in os.listdir(folder):
 		print ("processing", messagefile)
 		logger.info("processing", messagefile)
-		with open(os.path.join(folder, messagefile), 'rb') as fp:
+		with open(os.path.join(folder, messagefile), 'rb', encoding='utf-8') as fp:
 			msg = Message(fp)
 			with open (os.path.join(os.curdir, "msgs", messagefile.split(".")[0]+"_header.txt"), 'w') as fw:
 				fw.write(str(msg.header))
@@ -419,6 +424,7 @@ def visualizePaths(message_file, hops, dir=None):
 
 
 def process_ip(sender_provider_ip):
+	logging.info("processing IP {}".format(sender_provider_ip))
 	if sender_provider_ip not in cached_IPs.keys():
 		lookupentry = LookupEntry(sender_provider_ip)
 		lookupentry.resolveIP()
