@@ -55,7 +55,8 @@ class LookupEntry:
 		try:
 			# after 3 retries ask Japan and Korea
 			obj = ipwhois.IPWhois(self.ipaddress).lookup_rdap(retry_count=3, 
-									inc_nir=True)
+													asn_methods=['dns', 'whois'], inc_nir=True)
+									
 			self.results_to_dict(obj)
 			
 		except ipwhois.exceptions.IPDefinedError: 
@@ -202,11 +203,10 @@ class ReadIPs:
 							yield row_num, row
 
 		else:
-			with open(self.file_name, newline='') as csvfile:
+			with open(self.file_name, newline='\r\n') as csvfile:
 				ipreader  = csv.reader(csvfile, delimiter=',')
 				for row_num, row in enumerate(ipreader):
 					if row_num >= START_FROM_COL:
-					
 						yield row_num, row
       
 
@@ -260,15 +260,14 @@ if __name__ == "__main__":
 		mode = sys.argv[3]
 	
 	for row_num, vals in ReadIPs(sys.argv[1], mode):
-		ip = vals[1]
-		timestamp = vals[0]
-		if vals[2] == "HTTP Lookup Error":
+		ip = vals[2]
+		timestamp = vals[1]
+
+		if not cached_IPs.get(ip):
 			print ("Resolving IP {} from row {}".format(ip, row_num))
 			
-			process_ip(vals[1])
-		else:
+			process_ip(ip)
 
-			cached_IPs[ip] = vals[2:]
 		appendToCSVfile(ip, out_file, timestamp)
 		
 		
