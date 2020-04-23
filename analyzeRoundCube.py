@@ -64,17 +64,18 @@ if __name__ == "__main__":
             os.remove(args.csvfile)
     
     write_header(args.csvfile)
-    records = []
+    
     if os.path.isdir(args.log):
     
         for fname in os.listdir(args.log):
+            records = []
             if fname.startswith("maillog"):
                 continue
-           
+            print("parsing", os.path.join(args.log, fname))
             read_from_log(os.path.join(args.log, fname))
             write_to_csv(args.csvfile)
     else:
-
+        records = []
         read_from_log(args.log)
         write_to_csv(args.csvfile)
     
