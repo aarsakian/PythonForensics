@@ -215,14 +215,7 @@ Frames parseFrames(BYTE* block_buf, uint32_t * pos) {
 			headerframe.time = timeframe;
 			Frame frame = {block_buf, False, *pos+rel_pos, *pos+rel_pos+headerframe.length,  &headerframe, &tailframe};
 			
-			if  (is_frame_first(&headerframe)) {
-				first_frame_found = 1;
-				frames.head = &frame;
-			}	else {
-				block_buf++;
-				rel_pos++;
-				continue;
-			}
+			
 	
 			if (first_frame_found) {
 					printf("found frame pos rel %d  abs pos %d\n", rel_pos, *pos);
@@ -236,9 +229,19 @@ Frames parseFrames(BYTE* block_buf, uint32_t * pos) {
 					printf("exiting time diff > 1 pos rel %d  abs pos %d\n", rel_pos, *pos);
 					return frames;
 				}
+			} else {
+			
+				if  (is_frame_first(&headerframe)) {
+					first_frame_found = 1;
+					frames.head = &frame;
+					printf("starting frames sequence %d\n", rel_pos);
+				}	else {
+					block_buf++;
+					rel_pos++;
+					continue;
+				}
+			
 			}
-			
-			
 			previous_frame = frame;
 			block_buf += headerframe.length;
 			rel_pos += headerframe.length;
