@@ -8,7 +8,7 @@
 
 #define BLOCK_SIZE  1000000 //  1024*1024 
 #define FRAME_START_ID "44484156"
-#define SECONDS_DIFF 1
+#define SECONDS_DIFF 2
 #define FIRST_FRAME_FLAG 253
 
 
@@ -47,8 +47,8 @@ struct Frame {
 	BYTE is_corrupted; 
 	uint32_t start;
 	uint32_t end;
-    HeaderFrame* header;
-    TailFrame* tail;
+    HeaderFrame header;
+    TailFrame tail;
     Frame* prev;
     Frame* next;
 };
@@ -92,6 +92,22 @@ size_t getFileLen(char* fname){
 }
 
 
+char* replace(char* str, char oldchar, char newchar) {
+	char* new_str = (char*) malloc(strlen(str) + 1);
+	while(*str){
+		if (*str == oldchar) {
+			*new_str = newchar;
+		} else {
+			*new_str = *str;
+		}
+		new_str++;
+		str++;
+	}
+	return new_str;
+	
+}
+
+
 
 
 void write_frames(Frames* frames, char* path) {
@@ -101,9 +117,11 @@ void write_frames(Frames* frames, char* path) {
        
         //self.fname = to_str(frame.date()) + "_" + to_str(tail_frame.date()) + "____" + str(frame.start) + "----" + str(tail_frame.end) + ".dav"
       //  base_path = frame.header.get_path_using_channel(path)
-    path = to_date(&frame->header->time);
-    unsigned short int channel = frame->header->channel;
-
+    path = replace(replace(to_date(&frame->header.time), ':', '_'), ' ', '_');
+	
+    const char* channel = (char*) frame->header.channel;
+	strncat(path,  channel, strlen( channel));
+	
     BYTE* content = frame->content;
 	
 	fp = fopen(path, "a+");
@@ -185,8 +203,13 @@ int is_frame_whole(HeaderFrame* header, uint32_t offset){
 Frames parseFrames(BYTE* block_buf, uint32_t * pos) {
 	
 	uint8_t first_frame_found = 0;
+	
 	Frames frames;
 	Frame previous_frame;
+	HeaderFrame headerframe;	
+	TailFrame tailframe;
+	TimeFrame timeframe;
+	
 	previous_frame.is_corrupted = True;
 	uint32_t rel_pos = 0;
 	
@@ -194,9 +217,6 @@ Frames parseFrames(BYTE* block_buf, uint32_t * pos) {
 		
 		
 		if (*(block_buf)== 68 && *(block_buf+1) == 72 && *(block_buf+2) == 65 && *(block_buf+3) == 86) { //DHAV
-			HeaderFrame headerframe;
-		
-			TailFrame tailframe;
 			
 			memcpy(&headerframe, block_buf, sizeof(headerframe));
 		
@@ -207,19 +227,19 @@ Frames parseFrames(BYTE* block_buf, uint32_t * pos) {
 				continue;
 			}
 			
-			TimeFrame timeframe = convert_raw_time_to_dhfs_format(block_buf+16);
+			timeframe = convert_raw_time_to_dhfs_format(block_buf+16);
 		  //  printf("FHEADER %d  y %d", timeframe.tm_mon, timeframe.tm_year);
 		
-			
 			memcpy(&tailframe, block_buf + headerframe.length - sizeof(tailframe), sizeof(tailframe));
 			headerframe.time = timeframe;
-			Frame frame = {block_buf, False, *pos+rel_pos, *pos+rel_pos+headerframe.length,  &headerframe, &tailframe};
+			Frame frame = {block_buf, False, *pos+rel_pos, *pos+rel_pos+headerframe.length,  headerframe, tailframe};
 			
 			
-	
 			if (first_frame_found) {
 					printf("found frame pos rel %d  abs pos %d\n", rel_pos, *pos);
-				if (difftime(to_time_t(&frame.header->time), to_time_t(&previous_frame.header->time)) < SECONDS_DIFF) {
+				if ((difftime(to_time_t(&frame.header.time), to_time_t(&previous_frame.header.time)) < SECONDS_DIFF) && 
+					(previous_frame.header.channel == frame.header.channel))
+				{
 				
 					frame.prev = &previous_frame;
 					previous_frame.next = &frame;
