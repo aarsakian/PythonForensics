@@ -56,8 +56,8 @@ struct Frame {
 
 typedef struct{
   
-    Frame* head;
-    Frame* tail;
+    Frame head;
+    Frame tail;
     double douration;
 }Frames;
 
@@ -92,39 +92,65 @@ size_t getFileLen(char* fname){
 }
 
 
-char* replace(char* str, char oldchar, char newchar) {
-	char* new_str = (char*) malloc(strlen(str) + 1);
+void replace(char* str, char oldchar, char newchar) {
+	
 	while(*str){
 		if (*str == oldchar) {
-			*new_str = newchar;
-		} else {
-			*new_str = *str;
-		}
-		new_str++;
+			*str = newchar;
+		} 
+		
 		str++;
 	}
-	return new_str;
+	
 	
 }
 
+char* truncate_str(char* fname) {
+	char* new_truncated;
+	size_t pos = 1;
+	while(fname++) {
+		
+		if(*fname=='\\') {
+			break;
+		}
+		pos++;
+	}
+	memcpy(new_truncated, fname, pos);
+	return new_truncated;
+}
 
 
 
 void write_frames(Frames* frames, char* path) {
 	FILE *fp;
-    Frame* frame = frames->head;
-    Frame* tail_frame = frames->tail;
+    Frame *frame = &frames->head;
+    Frame *tail_frame = &frames->tail;
        
         //self.fname = to_str(frame.date()) + "_" + to_str(tail_frame.date()) + "____" + str(frame.start) + "----" + str(tail_frame.end) + ".dav"
       //  base_path = frame.header.get_path_using_channel(path)
-    path = replace(replace(to_date(&frame->header.time), ':', '_'), ' ', '_');
 	
-    const char* channel = (char*) frame->header.channel;
-	strncat(path,  channel, strlen( channel));
+	char fname[80];
+	sprintf(fname, "%u----%u__", frame->start, tail_frame->end);
+
+	char* s_name = to_date(&frame->header.time);
+	replace(s_name, ':', '-');
+    replace(s_name, ' ', '_');
+	strncat(fname, s_name, strlen(s_name)-1);
+	
+	s_name = to_date(&tail_frame->header.time);
+	replace(s_name, ':', '-');
+    replace(s_name, ' ', '_');
+	
+	const char* delimiter = "__";
+	strncat(fname, delimiter, strlen(delimiter));
+	strncat(fname, s_name, strlen(s_name)-1);
+	
+	const char* extension = ".dhav";
+	strncat(fname, extension, strlen(extension));
 	
     BYTE* content = frame->content;
 	
-	fp = fopen(path, "a+");
+	fp = fopen(fname, "a+");
 	if (fp == NULL) {
 	    fprintf(stderr, "open error for %s, errno = %d\n", path, errno);
         exit(1);
@@ -186,7 +212,6 @@ time_t to_time_t(TimeFrame * timeframe) {
 }
 
 char* to_date(TimeFrame * timeframe) {
-	char * frame_date;
 	time_t tm = mktime(timeframe);
 	return ctime(&tm);
 	
@@ -244,16 +269,16 @@ Frames parseFrames(BYTE* block_buf, uint32_t * pos) {
 					frame.prev = &previous_frame;
 					previous_frame.next = &frame;
 				} else {  // new sequence
-					frames.tail = &previous_frame;
+					frames.tail = previous_frame;
 					(*pos) += rel_pos;
 					printf("exiting time diff > 1 pos rel %d  abs pos %d\n", rel_pos, *pos);
 					return frames;
 				}
-			} else {
+			} else { 
 			
 				if  (is_frame_first(&headerframe)) {
 					first_frame_found = 1;
-					frames.head = &frame;
+					frames.head = frame;
 					printf("starting frames sequence %d\n", rel_pos);
 				}	else {
 					block_buf++;
