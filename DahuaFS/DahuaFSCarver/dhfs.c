@@ -156,13 +156,18 @@ void write_frames(Frames* frames, char* path) {
         exit(1);
 	}
 	
+	uint32_t pos =0;
+	
     while(frame) {
-		while(content) {
-			fputc(*content, fp);
-			content++;
+		while(pos<=frame->end - frame->start) {
+			fputc(*(content+pos), fp);
+			pos++;
+			printf("%x",*(content+pos));
+				
 		}
+		pos = 0;
         frame = frame->next;
-		
+		printf("new frame \n");
         content = frame->content;
 	}
     //if not os.path.exists(base_path):
@@ -230,12 +235,12 @@ Frames parseFrames(BYTE* block_buf, uint32_t * pos) {
 	uint8_t first_frame_found = 0;
 	
 	Frames frames;
-	Frame previous_frame;
+	Frame* previous_frame;
 	HeaderFrame headerframe;	
 	TailFrame tailframe;
 	TimeFrame timeframe;
 	
-	previous_frame.is_corrupted = True;
+	
 	uint32_t rel_pos = 0;
 	
  	while (rel_pos < BLOCK_SIZE)   {
@@ -257,19 +262,26 @@ Frames parseFrames(BYTE* block_buf, uint32_t * pos) {
 		
 			memcpy(&tailframe, block_buf + headerframe.length - sizeof(tailframe), sizeof(tailframe));
 			headerframe.time = timeframe;
-			Frame frame = {block_buf, False, *pos+rel_pos, *pos+rel_pos+headerframe.length,  headerframe, tailframe};
+			Frame *frame = malloc(sizeof(Frame));
+			frame->content = block_buf; 
+			frame->is_corrupted = False;
+			frame->start = *pos+rel_pos;
+			frame->end = *pos+rel_pos+headerframe.length;
+			frame->header = headerframe;
+			frame->tail = tailframe;
 			
 			
 			if (first_frame_found) {
 					printf("found frame pos rel %d  abs pos %d\n", rel_pos, *pos);
-				if ((difftime(to_time_t(&frame.header.time), to_time_t(&previous_frame.header.time)) < SECONDS_DIFF) && 
-					(previous_frame.header.channel == frame.header.channel))
+				if ((difftime(to_time_t(&frame->header.time), to_time_t(&previous_frame->header.time)) < SECONDS_DIFF) && 
+					(previous_frame->header.channel == frame->header.channel))
 				{
 				
-					frame.prev = &previous_frame;
-					previous_frame.next = &frame;
+					frame->prev = previous_frame;
+					previous_frame->next = frame;
+					
 				} else {  // new sequence
-					frames.tail = previous_frame;
+					frames.tail = *previous_frame;
 					(*pos) += rel_pos;
 					printf("exiting time diff > 1 pos rel %d  abs pos %d\n", rel_pos, *pos);
 					return frames;
@@ -278,7 +290,7 @@ Frames parseFrames(BYTE* block_buf, uint32_t * pos) {
 			
 				if  (is_frame_first(&headerframe)) {
 					first_frame_found = 1;
-					frames.head = frame;
+					frames.head = *frame;
 					printf("starting frames sequence %d\n", rel_pos);
 				}	else {
 					block_buf++;
