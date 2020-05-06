@@ -56,8 +56,8 @@ struct Frame {
 
 typedef struct{
   
-    Frame head;
-    Frame tail;
+    Frame* head;
+    Frame* tail;
     double douration;
 }Frames;
 
@@ -123,19 +123,21 @@ char* truncate_str(char* fname) {
 
 void write_frames(Frames* frames, char* path) {
 	FILE *fp;
-    Frame *frame = &frames->head;
-    Frame *tail_frame = &frames->tail;
+    Frame *frame = frames->head;
+    Frame *tail_frame = frames->tail;
        
         //self.fname = to_str(frame.date()) + "_" + to_str(tail_frame.date()) + "____" + str(frame.start) + "----" + str(tail_frame.end) + ".dav"
       //  base_path = frame.header.get_path_using_channel(path)
 	
 	char fname[80];
-	sprintf(fname, "%u----%u__", frame->start, tail_frame->end);
+	
 
 	char* s_name = to_date(&frame->header.time);
 	replace(s_name, ':', '-');
     replace(s_name, ' ', '_');
-	strncat(fname, s_name, strlen(s_name)-1);
+	strcpy(fname, s_name);
+	
+	strtok(fname, "\n"); //cut off at new line delimiter
 	
 	s_name = to_date(&tail_frame->header.time);
 	replace(s_name, ':', '-');
@@ -144,32 +146,61 @@ void write_frames(Frames* frames, char* path) {
 	const char* delimiter = "__";
 	strncat(fname, delimiter, strlen(delimiter));
 	strncat(fname, s_name, strlen(s_name)-1);
+		
+	char offsets[50];
+	sprintf(offsets, "_%u----%u", frame->start, tail_frame->end);
+	
+	strncat(fname, offsets, strlen(offsets));
 	
 	const char* extension = ".dhav";
 	strncat(fname, extension, strlen(extension));
 	
     BYTE* content = frame->content;
 	
+	
+	char channel[5];
+	sprintf(channel, "%u", frame->header.channel+1);
+	
+	char curdir[100];
+	
+	getcwd(curdir, sizeof(curdir));
+	
+	if (mkdir(channel) == -1) {
+		fprintf(stderr, "directory creating error errno = %d\n", errno);
+		
+	}
+	
+	if (chdir(channel) == -1) {
+		fprintf(stderr, "error changing directory errno = %d\n", errno);
+		exit(1);
+	}
+	
+	
 	fp = fopen(fname, "a+");
 	if (fp == NULL) {
-	    fprintf(stderr, "open error for %s, errno = %d\n", path, errno);
+	    fprintf(stderr, "open error for  errno = %d\n",  errno);
         exit(1);
 	}
 	
-	uint32_t pos =0;
 	
-    while(frame) {
+		
+	uint32_t pos =0;
+	uint32_t noframes = 0;
+
+	
+    do{
+		noframes++;
 		while(pos<=frame->end - frame->start) {
 			fputc(*(content+pos), fp);
 			pos++;
-			printf("%x",*(content+pos));
+			
 				
 		}
 		pos = 0;
         frame = frame->next;
-		printf("new frame \n");
+		printf("new frame %d \n", noframes);
         content = frame->content;
-	}
+	}while(frame->end!=tail_frame->end);
     //if not os.path.exists(base_path):
     //       os.mkdir(base_path)
         
@@ -177,7 +208,7 @@ void write_frames(Frames* frames, char* path) {
          //   now = datetime.datetime.now().strftime('%Y-%m-%d %H_%M_%S')
           //  print("{} created frame {} length {}".format(now, self.fname, len(content)))
            //logging.info("{} created frame {} length {}".format(now, self.fname, len(content)))
-
+	chdir(curdir);
 }
 
 
@@ -272,7 +303,7 @@ Frames parseFrames(BYTE* block_buf, uint32_t * pos) {
 			
 			
 			if (first_frame_found) {
-					printf("found frame pos rel %d  abs pos %d\n", rel_pos, *pos);
+				//	printf("found frame pos rel %d  abs pos %d\n", rel_pos, *pos);
 				if ((difftime(to_time_t(&frame->header.time), to_time_t(&previous_frame->header.time)) < SECONDS_DIFF) && 
 					(previous_frame->header.channel == frame->header.channel))
 				{
@@ -281,16 +312,16 @@ Frames parseFrames(BYTE* block_buf, uint32_t * pos) {
 					previous_frame->next = frame;
 					
 				} else {  // new sequence
-					frames.tail = *previous_frame;
+					frames.tail = previous_frame;
 					(*pos) += rel_pos;
-					printf("exiting time diff > 1 pos rel %d  abs pos %d\n", rel_pos, *pos);
+					//printf("exiting time diff > 1 pos rel %d  abs pos %d\n", rel_pos, *pos);
 					return frames;
 				}
 			} else { 
 			
 				if  (is_frame_first(&headerframe)) {
 					first_frame_found = 1;
-					frames.head = *frame;
+					frames.head = frame;
 					printf("starting frames sequence %d\n", rel_pos);
 				}	else {
 					block_buf++;
@@ -330,11 +361,11 @@ int main(int argc, char* argv[]) {
 	uint32_t file_len = getFileLen(argv[1]);
 	uint32_t pos = 0;
 	while (pos < file_len) {
-		printf("new chunck %d %d file-lan\n", pos, file_len);
+		//printf("new chunck %d %d file-lan\n", pos, file_len);
 		readChunk(argv[1], block_buf,  pos);
 		Frames frames = parseFrames(block_buf, &pos);
 		write_frames(&frames, argv[2]);
-	//	printf("pos %d", pos);
+		printf("current pos %d \n", pos);
 
 		
 	}
