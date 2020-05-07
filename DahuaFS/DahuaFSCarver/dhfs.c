@@ -5,6 +5,8 @@
 #include <stdint.h>
 #include <time.h>
 #include <sys/stat.h>
+#include <unistd.h>
+
 
 #define BLOCK_SIZE  1000000 //  1024*1024 
 #define FRAME_START_ID "44484156"
@@ -32,8 +34,8 @@ typedef struct {
 typedef struct {
 	BYTE start_identifier[4];
 	//BYTE *content;
-	unsigned short int type;
-	unsigned short int channel;
+	uint16_t type;
+	uint16_t  channel;
 	uint32_t number;
 	uint32_t length; 
 	TimeFrame time;
@@ -176,7 +178,7 @@ void write_frames(Frames* frames, char* path) {
 	}
 	
 	
-	fp = fopen(fname, "a+");
+	fp = fopen(fname, "wb+");
 	if (fp == NULL) {
 	    fprintf(stderr, "open error for  errno = %d\n",  errno);
         exit(1);
@@ -191,10 +193,10 @@ void write_frames(Frames* frames, char* path) {
     for(;;){
 		noframes++;
 	
-		fwrite((content+pos),frame->end - frame->start, 1, fp);
+		fwrite(content, frame->header.length, 1, fp);
 		pos += frame->end - frame->start;
 
-		printf("new frame %d -> %d \n", frame->start, frame->end);
+	//	printf("new frame %d -> %d \n", frame->start, frame->end);
 		if (frame->end==tail_frame->end) {
 			break;
 		}
@@ -208,6 +210,7 @@ void write_frames(Frames* frames, char* path) {
 }
 
 int is_frame_corrupted(HeaderFrame *header) {
+	
 	if (header->time.tm_hour>23 || header->time.tm_hour < 0 ||
 	    header->time.tm_min<0 || header->time.tm_min>59 || 
 		header->time.tm_sec<0 || header->time.tm_sec>59 ||
@@ -363,9 +366,7 @@ Frames parseFrames(BYTE* block_buf, uint32_t * pos) {
 }
 
 int main(int argc, char* argv[]) {
-	FILE *fp;
 
-	
 	//printf("about to read file");
 	BYTE block_buf[BLOCK_SIZE] = {0};
 	
