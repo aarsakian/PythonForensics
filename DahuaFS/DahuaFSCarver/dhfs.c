@@ -188,17 +188,20 @@ void write_frames(Frames* frames, char* path) {
 	uint32_t noframes = 0;
 
 	
-    do{
+    for(;;){
 		noframes++;
 	
 		fwrite((content+pos),frame->end - frame->start, 1, fp);
 		pos += frame->end - frame->start;
 
-		//printf("new frame %d -> %d \n", frame->start, frame->end);
+		printf("new frame %d -> %d \n", frame->start, frame->end);
+		if (frame->end==tail_frame->end) {
+			break;
+		}
         frame = frame->next;
 		
         content = frame->content;
-	}while(frame->end!=tail_frame->end);
+	}
 	printf("total %d\n", pos);
 	fclose(fp);
 	chdir(curdir);
