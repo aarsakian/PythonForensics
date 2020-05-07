@@ -190,27 +190,31 @@ void write_frames(Frames* frames, char* path) {
 	
     do{
 		noframes++;
-		while(pos<=frame->end - frame->start) {
-			fputc(*(content+pos), fp);
-			pos++;
-			
-				
-		}
-		pos = 0;
+	
+		fwrite((content+pos),frame->end - frame->start, 1, fp);
+		pos += frame->end - frame->start;
+
+		//printf("new frame %d -> %d \n", frame->start, frame->end);
         frame = frame->next;
-		printf("new frame %d \n", noframes);
+		
         content = frame->content;
 	}while(frame->end!=tail_frame->end);
-    //if not os.path.exists(base_path):
-    //       os.mkdir(base_path)
-        
-       
-         //   now = datetime.datetime.now().strftime('%Y-%m-%d %H_%M_%S')
-          //  print("{} created frame {} length {}".format(now, self.fname, len(content)))
-           //logging.info("{} created frame {} length {}".format(now, self.fname, len(content)))
+	printf("total %d\n", pos);
+	fclose(fp);
 	chdir(curdir);
 }
 
+int is_frame_corrupted(HeaderFrame *header) {
+	if (header->time.tm_hour>23 || header->time.tm_hour < 0 ||
+	    header->time.tm_min<0 || header->time.tm_min>59 || 
+		header->time.tm_sec<0 || header->time.tm_sec>59 ||
+		header->time.tm_mon<0 || header->time.tm_mon > 11) {
+			return True;
+		}
+	
+	return False;
+	
+}
 
 
 int is_frame_first(HeaderFrame *header) {
@@ -293,6 +297,11 @@ Frames parseFrames(BYTE* block_buf, uint32_t * pos) {
 		
 			memcpy(&tailframe, block_buf + headerframe.length - sizeof(tailframe), sizeof(tailframe));
 			headerframe.time = timeframe;
+			
+			if (is_frame_corrupted(&headerframe)) {
+				continue;
+			}
+			
 			Frame *frame = malloc(sizeof(Frame));
 			frame->content = block_buf; 
 			frame->is_corrupted = False;
@@ -322,7 +331,7 @@ Frames parseFrames(BYTE* block_buf, uint32_t * pos) {
 				if  (is_frame_first(&headerframe)) {
 					first_frame_found = 1;
 					frames.head = frame;
-					printf("starting frames sequence %d\n", rel_pos);
+				//	printf("starting frames sequence %d\n", rel_pos);
 				}	else {
 					block_buf++;
 					rel_pos++;
@@ -354,18 +363,19 @@ int main(int argc, char* argv[]) {
 	FILE *fp;
 
 	
-	printf("about to read file");
+	//printf("about to read file");
 	BYTE block_buf[BLOCK_SIZE] = {0};
 	
 	
 	uint32_t file_len = getFileLen(argv[1]);
 	uint32_t pos = 0;
 	while (pos < file_len) {
-		//printf("new chunck %d %d file-lan\n", pos, file_len);
+		printf("new chunck %d %d file-lan\n", pos, file_len);
 		readChunk(argv[1], block_buf,  pos);
 		Frames frames = parseFrames(block_buf, &pos);
+		printf("moved pos %d \n", pos);
 		write_frames(&frames, argv[2]);
-		printf("current pos %d \n", pos);
+		
 
 		
 	}
