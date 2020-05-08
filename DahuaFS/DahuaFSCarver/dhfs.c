@@ -328,7 +328,7 @@ Frames parseFrames(BYTE* block_buf, uint32_t * pos) {
 					
 				} else {  // new sequence
 					frames.tail = previous_frame;
-					(*pos) += rel_pos;
+					(*pos) = frames.tail->end;
 					//printf("exiting time diff > 1 pos rel %d  abs pos %d\n", rel_pos, *pos);
 					return frames;
 				}
@@ -359,7 +359,8 @@ Frames parseFrames(BYTE* block_buf, uint32_t * pos) {
 	
 	}
 	//end of block reached 
-	(*pos) += rel_pos;			
+	
+	frames.tail = previous_frame; //termination because buffer has been exhausted not time diff
 	return frames;
 	
 	
