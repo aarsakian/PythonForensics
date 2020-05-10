@@ -264,6 +264,15 @@ char* to_date(TimeFrame * timeframe) {
 	
 }
 
+int frame_has_not_legit_channel(HeaderFrame* header) {
+	
+	if (header->channel >15) {
+		return 1;
+	} 
+	return 0;
+	
+}
+
 int is_frame_whole(HeaderFrame* header, uint32_t offset){
 	if ((header->length + offset) > BLOCK_SIZE) {
 		return 0;
@@ -271,16 +280,20 @@ int is_frame_whole(HeaderFrame* header, uint32_t offset){
 	return 1;
 }
 
-Frames parseFrames(BYTE* block_buf, uint32_t * pos) {
+int parseFrames(Frames* frames, BYTE* block_buf, uint32_t * pos, uint8_t *first_frame_found) {
 	
-	uint8_t first_frame_found = 0;
 	
-	Frames frames;
+	
+	
 	Frame* previous_frame;
 	HeaderFrame headerframe;	
 	TailFrame tailframe;
 	TimeFrame timeframe;
 	
+	if (first_frame_found) {  //rebind
+		previous_frame = frames->tail;
+		
+	}
 	
 	uint32_t rel_pos = 0;
 	
@@ -305,6 +318,12 @@ Frames parseFrames(BYTE* block_buf, uint32_t * pos) {
 			headerframe.time = timeframe;
 			
 			if (is_frame_corrupted(&headerframe)) {
+				rel_pos += headerframe.length;
+				continue;
+			}
+			
+			if (frame_has_not_legit_channel(&headerframe)) {
+				rel_pos += headerframe.length;
 				continue;
 			}
 			
@@ -317,7 +336,7 @@ Frames parseFrames(BYTE* block_buf, uint32_t * pos) {
 			frame->tail = tailframe;
 			
 			
-			if (first_frame_found) {
+			if (*first_frame_found) {
 				//	printf("found frame pos rel %d  abs pos %d\n", rel_pos, *pos);
 				if ((difftime(to_time_t(&frame->header.time), to_time_t(&previous_frame->header.time)) < SECONDS_DIFF) && 
 					(previous_frame->header.channel == frame->header.channel))
@@ -327,16 +346,16 @@ Frames parseFrames(BYTE* block_buf, uint32_t * pos) {
 					previous_frame->next = frame;
 					
 				} else {  // new sequence
-					frames.tail = previous_frame;
-					(*pos) = frames.tail->end;
+					frames->tail = previous_frame;
+					(*pos) = frames->tail->end;
 					//printf("exiting time diff > 1 pos rel %d  abs pos %d\n", rel_pos, *pos);
-					return frames;
+					return 1;
 				}
 			} else { 
 			
 				if  (is_frame_first(&headerframe)) {
-					first_frame_found = 1;
-					frames.head = frame;
+					*first_frame_found = 1;
+					frames->head = frame;
 				//	printf("starting frames sequence %d\n", rel_pos);
 				}	else {
 					block_buf++;
@@ -358,10 +377,15 @@ Frames parseFrames(BYTE* block_buf, uint32_t * pos) {
 	
 	
 	}
-	//end of block reached 
+	//end of block reached  termination because buffer has been exhausted not time diff
+	if (rel_pos == BLOCK_SIZE) //did not locate any frame at all
+		(*pos) += BLOCK_SIZE;
+	else {
+		(*pos) = previous_frame->end;
+	}
 	
-	frames.tail = previous_frame; //termination because buffer has been exhausted not time diff
-	return frames;
+	frames->tail = previous_frame; //use it only when we find out that the first frame of next block is not successor
+	return 0;
 	
 	
 }
@@ -371,16 +395,22 @@ int main(int argc, char* argv[]) {
 	//printf("about to read file");
 	BYTE block_buf[BLOCK_SIZE] = {0};
 	
+	uint8_t is_chain_complete;
 	
 	uint32_t file_len = getFileLen(argv[1]);
 	uint32_t pos = 0;
+	uint8_t first_frame_found = 0;
+	Frames* frames = malloc(sizeof(frames));
+	
 	while (pos < file_len) {
 		printf("new chunck %d %d file-lan\n", pos, file_len);
 		readChunk(argv[1], block_buf,  pos);
-		Frames frames = parseFrames(block_buf, &pos);
-		printf("moved pos %d \n", pos);
-		write_frames(&frames, argv[2]);
-		
+		is_chain_complete = parseFrames(frames, block_buf, &pos, &first_frame_found);
+		if (is_chain_complete) {
+			printf("moved pos %d \n", pos);
+			write_frames(frames, argv[2]);
+			first_frame_found = 0;
+		} 
 
 		
 	}
