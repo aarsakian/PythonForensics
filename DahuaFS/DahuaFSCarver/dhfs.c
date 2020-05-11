@@ -6,6 +6,8 @@
 #include <time.h>
 #include <sys/stat.h>
 #include <unistd.h>
+//#include <libavutil/timestamp.h>
+#include <libavformat/avformat.h>
 
 
 #define BLOCK_SIZE  1000000 //  1024*1024 
@@ -24,6 +26,32 @@ typedef uint8_t BYTE;
 const BYTE True = 1;
 const BYTE False = 0;
 
+
+void convert_dhav_to_mp4(const char* in_filename, const char* out_filename){
+	AVFormatContext *input_format_context = NULL;
+	AVFormatContext *output_format_context = NULL;	
+	int ret;
+	int *streams_list = NULL;
+	if ((ret = avformat_open_input(&input_format_context, in_filename, NULL, NULL)) < 0) {
+		fprintf(stderr, "Could not open input file '%s'", in_filename);
+		abort();
+	}
+	if ((ret = avformat_find_stream_info(input_format_context, NULL)) < 0) {
+		fprintf(stderr, "Failed to retrieve input stream information");
+		abort();
+	}
+
+	avformat_alloc_output_context2(&output_format_context, NULL, NULL, out_filename);
+	if (!output_format_context) {
+		fprintf(stderr, "Could not create output context\n");
+		ret = AVERROR_UNKNOWN;
+		abort();
+	}
+	
+	unsigned int number_of_streams = input_format_context->nb_streams;
+	streams_list = av_mallocz_array(number_of_streams, sizeof(*streams_list));
+		
+}
 
 typedef struct {
   BYTE end_identifier[4];
