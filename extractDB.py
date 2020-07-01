@@ -1,12 +1,17 @@
-
-import pyodbc,csv, xlsxwriter,argparse, os, gc
+import pyodbc
+import csv
+import xlsxwriter
+import argparse
+import os
+import gc
 from threading import Thread, Lock
 from functools import wraps
 from abc import abstractmethod
 from time import  time
 from queue import Queue
 from memory_profiler import profile
-import logging, tracemalloc
+import logging
+import tracemalloc
 from datetime import datetime
 
 FETCH_SIZE = 20
@@ -93,26 +98,22 @@ def create_connection(func):
     return wrapper
 
 
-
-
-
-
-
 @create_connection
 def retrieve_data_iter(cursor, *args):
-        tablename = args[0]
+    tablename = args[0]
        
-        cursor = cursor.execute("SELECT * FROM ["+tablename+"]")
-        while True:
-            rows = cursor.fetchmany(FETCH_SIZE)
+    cursor = cursor.execute("SELECT * FROM ["+tablename+"]")
+    while True:
+        rows = cursor.fetchmany(FETCH_SIZE)
 
-            if not rows:
-                cursor.close()
-                del cursor
-                gc.collect()
-                break
-            for row in rows:
-                yield row
+        if not rows:
+            cursor.close()
+            del cursor
+            gc.collect()
+            break
+        for row in rows:
+            yield row
+
 
 @create_connection
 def retrieve_database_names(cursor):
@@ -174,15 +175,15 @@ def retrieve_table_names(cursor):
 
 @create_connection
 def retrieve_column_names(cursor, *args):
-         schema = MSSQL_INFO["schema"]
-         tablename = args[0]
-         logger.info("retrieving columns for table %s",tablename)
-         columns = cursor.columns(table=tablename, schema=schema)
-         colnames =  list(column.column_name for column in columns)
-         cursor.close()
-         del cursor
-         gc.collect()
-         return colnames
+    schema = MSSQL_INFO["schema"]
+    tablename = args[0]
+    logger.info("retrieving columns for table %s",tablename)
+    columns = cursor.columns(table=tablename, schema=schema)
+    colnames =  list(column.column_name for column in columns)
+    cursor.close()
+    del cursor
+    gc.collect()
+    return colnames
 
 
 
@@ -199,21 +200,19 @@ class Writer:
 
     @abstractmethod
     def write_header(self, colnames):
-        pass
+        """write header"""
 
     @abstractmethod
     def write(self, data):
         """Strategy for write interface"""
-        pass
+        
 
     @abstractmethod
     def write_row(self, data):
         """strategy when we desire to be memory efficient write in steps"""
-        pass
     
     def file_exists(self):
         return os.path.exists(self.filepath)
-
 
 
 class CSVWriter(Writer):
@@ -228,7 +227,7 @@ class CSVWriter(Writer):
 
     def _create_csv_list(self, row):
         csv_list = []
-        for cid, data in enumerate(row):
+        for  data in row:
             if isinstance(data, datetime):
                 csv_list.append(data.isoformat(' '))
             else:
@@ -261,7 +260,6 @@ class CSVWriter(Writer):
                 print(stat)
 
 
-
 class XLSXWriter(Writer):
     def __init__(self, dbname, tablename):
         self.filepath = os.path.join(dbname,"xlsx", tablename+".xlsx")
@@ -274,14 +272,12 @@ class XLSXWriter(Writer):
     def write_header(self, colnames):
         self.worksheet.write_row(0, 0, colnames)
 
-
     def write(self,  data):
         
         for rid, row in enumerate(data):
             self.write_row(row)
 
         self.workbook.close()
-
 
     def write_row(self, data):
          
@@ -298,9 +294,7 @@ class XLSXWriter(Writer):
                 else:
                     self.worksheet.write(self.rowid + 1, cid, col)
 
-
             self.rowid += 1
-
 
 
 class Database:
@@ -308,22 +302,13 @@ class Database:
         self.dbname = dbname
         self.tables = []
 
-
-
     @property
     def noftables(self):
         return len(self.tables)
 
-
-
     def find_tables(self):
         print ("Retrieving table names for db", self.dbname)
         self.tables = retrieve_table_names()
-
-
-
-
-
 
 
 class Table:
@@ -335,16 +320,10 @@ class Table:
         """parse data from table rows"""
         if MSSQL_INFO["verbosity"]:
             print ("Data for ", self.tablename)
-        return [row for rid, row in enumerate(retrieve_data_iter(self.tablename, dbname))]
-          
+        return [row for rid, row in enumerate(retrieve_data_iter(self.tablename, dbname))]       
        
 
-
-
-
-
-
-class Locker(object):
+class Locker:
     def __init__(self):
         self.lock = Lock()
         self.__elapsed = 0.0
@@ -364,9 +343,6 @@ class Locker(object):
         return format(self.__elapsed, '4.2f')
 
 
-
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("server",help="Specify Server Name")
@@ -382,7 +358,6 @@ if __name__ == "__main__":
     parser.add_argument("--memory", help="reduce memory footprint", type=bool)
     
     args = parser.parse_args()
-
 
     MSSQL_INFO["servername"] = args.server #'WIN-PU4LF8SP8JU\SQLEXPRESS'
 	
@@ -414,7 +389,6 @@ if __name__ == "__main__":
     if args.fetchsize:
         FETCH_SIZE = args.fetchsize
 
-
     def process_table_non_threaded(tname):
 
         writers = []
@@ -443,8 +417,6 @@ if __name__ == "__main__":
                 print ("Before writing ")
             [w.write(t.get_data()) for w in writers]
 
-
-
         lck.decrement()
         lck.total_time()
         logging.info("Finished parsing table {0} remaining {1} tables out of {2} in {3} secs so far".
@@ -452,7 +424,6 @@ if __name__ == "__main__":
         if MSSQL_INFO["verbosity"]:
            print ("Finished parsing table {0} remaining {1} tables out of {2} in {3} secs so far".
                format(tname, lck.remaining, db.noftables, lck.elapsed))
-
 
     def process_table_threaded():
         """consumer for queue"""
@@ -480,8 +451,6 @@ if __name__ == "__main__":
                 print ("Before writing ")
             [w.write(t.get_data()) for w in writers]
 
-
-
             lck.decrement()
             lck.total_time()
             if MSSQL_INFO["verbosity"]:
@@ -492,12 +461,8 @@ if __name__ == "__main__":
                    " {4} secs so far".
                format(tname, lck.remaining, queue.qsize(), db.noftables, lck.elapsed))
 
-
             queue.task_done()
-
-
-
-
+            
     if args.db:
         databases = [args.db]
     else:
@@ -526,5 +491,3 @@ if __name__ == "__main__":
             else:
                 for table in (sorted(db.tables)):
                     process_table_non_threaded(table)
-
-
