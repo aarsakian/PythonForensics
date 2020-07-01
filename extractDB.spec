@@ -4,7 +4,7 @@ block_cipher = None
 
 
 a = Analysis(['extractDB.py'],
-             pathex=['E:\\ExtractDB\\ucrt\\DLLs\\x64'],
+             pathex=['C:\\Users\\dee\\PythonForensics', 'C:\\Users\\dee\\ucrt'],
              binaries=[],
              datas=[],
              hiddenimports=[],
