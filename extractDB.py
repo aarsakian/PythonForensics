@@ -10,6 +10,8 @@ import logging, tracemalloc
 from datetime import datetime
 
 FETCH_SIZE = 20
+TO_TABLE = None
+FROM_TABLE = None
 MSSQL_INFO = {}
 XLSX_MAX_LEN = 30
 FORMAT = None     
@@ -129,8 +131,8 @@ def retrieve_table_names(cursor):
     cursor.close()
     del cursor
 
-
     gc.collect()
+    
     
     if TABLE:
         return list(table[2] for table in tables if table[2] == TABLE)
@@ -138,7 +140,38 @@ def retrieve_table_names(cursor):
         return list(table[2] for table in tables if table[2] not in SKIP_TABLES)
     else:
         return list(table[2] for table in tables)
-
+    
+    if FROM_TABLE and TO_TABLE:
+        tables = []
+        table_start_found = False
+        for table in tables:
+            if table[2] == FROM_TABLE:
+                table_start_found = True
+            if table_start_found:
+                tables.append(table[2])
+            if table[2] == TO_TABLE:
+                break
+        return tables 
+    
+    if FROM_TABLE:
+        tables = []
+        table_start_found = False
+        for table in tables:
+            if table[2] == FROM_TABLE:
+                table_start_found = True
+            if table_start_found:
+                tables.append(table[2])
+        return tables 
+        
+    if TO_TABLE:
+        tables = []
+        for table in tables:
+            if table[2] == TO_TABLE:
+                break
+            tables.append(table[2])
+            
+        return tables
+        
 
 @create_connection
 def retrieve_column_names(cursor, *args):
@@ -343,6 +376,8 @@ if __name__ == "__main__":
     parser.add_argument("--verbose", help="enhanced output")
     parser.add_argument("--table", help="extract only a table from a database")
     parser.add_argument("--format", help="format report of extracted data default xlsx/csv")
+    parser.add_argument("--from_table", help="determine the table from which data extraction will start")
+    parser.add_argument("--to_table", help="determine the last table which data extraction will terminate")
     parser.add_argument("--skiptables",  help="extract all tables from a database except the ones specified need to be comma seperated!")
     parser.add_argument("--fetchsize", help="how many records will be fetched for each query", type=int)
     parser.add_argument("--memory", help="reduce memory footprint", type=bool)
@@ -357,6 +392,12 @@ if __name__ == "__main__":
 
     if args.format:
         FORMAT = args.format
+
+    if args.from_table:
+        FROM_TABLE = args.from_table
+        
+    if args.to_table:
+        TO_TABLE = args.to_table
 
     if args.db and args.table:
         TABLE = args.table
