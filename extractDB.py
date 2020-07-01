@@ -12,6 +12,7 @@ from datetime import datetime
 FETCH_SIZE = 20
 MSSQL_INFO = {}
 XLSX_MAX_LEN = 30
+FORMAT = None     
 TABLE = None
 SKIP_TABLES = []
 MSSQL_INFO["verbosity"] = False
@@ -203,7 +204,7 @@ class CSVWriter(Writer):
         return csv_list
 
     def write(self, data):
-        with open(self.filepath, 'a+', newline='', encoding="utf-8") as csvfile:
+        with open(self.filepath, 'w', newline='', encoding="utf-8") as csvfile:
             tablewriter = csv.writer(csvfile, delimiter=',')
             if MSSQL_INFO["verbosity"]:
                 print ("writing to csv ", len(data), self.filepath)
@@ -218,10 +219,9 @@ class CSVWriter(Writer):
         with open(self.filepath, 'a+', newline='', encoding="utf-8") as csvfile:
             tablewriter = csv.writer(csvfile, delimiter=',')
             csv_list = self._create_csv_list(row)
-            
+           
             tablewriter.writerow(csv_list)
-            time2 = tracemalloc.take_snapshot()
-       
+         
         if MSSQL_INFO["verbosity"]:
             print ("file closed ", self.filepath)
             top_stats = time2.compare_to(self.time1, 'lineno')
@@ -342,6 +342,7 @@ if __name__ == "__main__":
     parser.add_argument("--threaded",help="default non threaded",type=bool)
     parser.add_argument("--verbose", help="enhanced output")
     parser.add_argument("--table", help="extract only a table from a database")
+    parser.add_argument("--format", help="format report of extracted data default xlsx/csv")
     parser.add_argument("--skiptables",  help="extract all tables from a database except the ones specified need to be comma seperated!")
     parser.add_argument("--fetchsize", help="how many records will be fetched for each query", type=int)
     parser.add_argument("--memory", help="reduce memory footprint", type=bool)
@@ -354,6 +355,8 @@ if __name__ == "__main__":
     if args.verbose:
         MSSQL_INFO["verbosity"] = True
 
+    if args.format:
+        FORMAT = args.format
 
     if args.db and args.table:
         TABLE = args.table
@@ -381,9 +384,14 @@ if __name__ == "__main__":
         colnames = retrieve_column_names(tname)
         t = Table(tname, colnames)
 
-
-        writers.append(XLSXWriter(db.dbname, tname))
-        writers.append(CSVWriter(db.dbname, tname))
+        if not FORMAT:
+            writers.append(XLSXWriter(db.dbname, tname))
+            writers.append(CSVWriter(db.dbname, tname))
+        elif FORMAT == "xlsx":
+            writers.append(XLSXWriter(db.dbname, tname))
+        elif FORMAT == "csv":
+            writers.append(CSVWriter(db.dbname, tname))
+            
         [w.write_header(t.colnames)  for w in writers]
         if args.memory:
 
