@@ -132,46 +132,45 @@ def retrieve_table_names(cursor):
     del cursor
 
     gc.collect()
-    
-    
+
     if TABLE:
         return list(table[2] for table in tables if table[2] == TABLE)
     elif SKIP_TABLES:
         return list(table[2] for table in tables if table[2] not in SKIP_TABLES)
+    
+    elif FROM_TABLE and TO_TABLE:
+        tables_ = []
+        table_start_found = False
+        for table in tables:
+            if table[2] == FROM_TABLE:
+                table_start_found = True
+            if table_start_found:
+                tables_.append(table[2])
+            if table[2] == TO_TABLE:
+                break
+        return tables_ 
+    
+    elif FROM_TABLE:
+        tables_ = []
+        table_start_found = False
+        for table in tables:    
+            if table[2] == FROM_TABLE:
+                table_start_found = True
+            if table_start_found:
+                tables_.append(table[2])
+        return tables_
+        
+    elif TO_TABLE:
+        tables_ = []
+        for table in tables:
+            if table[2] == TO_TABLE:
+                break
+            tables_.append(table[2])
+        return tables_
+    
     else:
         return list(table[2] for table in tables)
-    
-    if FROM_TABLE and TO_TABLE:
-        tables = []
-        table_start_found = False
-        for table in tables:
-            if table[2] == FROM_TABLE:
-                table_start_found = True
-            if table_start_found:
-                tables.append(table[2])
-            if table[2] == TO_TABLE:
-                break
-        return tables 
-    
-    if FROM_TABLE:
-        tables = []
-        table_start_found = False
-        for table in tables:
-            if table[2] == FROM_TABLE:
-                table_start_found = True
-            if table_start_found:
-                tables.append(table[2])
-        return tables 
-        
-    if TO_TABLE:
-        tables = []
-        for table in tables:
-            if table[2] == TO_TABLE:
-                break
-            tables.append(table[2])
-            
-        return tables
-        
+
 
 @create_connection
 def retrieve_column_names(cursor, *args):
