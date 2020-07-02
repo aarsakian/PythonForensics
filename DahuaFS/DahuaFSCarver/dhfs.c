@@ -6,6 +6,7 @@
 #include <time.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <dirent.h>
 //#include <libavutil/timestamp.h>
 #include <libavformat/avformat.h>
 
@@ -27,7 +28,77 @@ const BYTE True = 1;
 const BYTE False = 0;
 
 
-void convert_dhav_to_mp4(const char* in_filename, const char* out_filename){
+
+
+/***INITIAL CODE FROM https://www.shayanderson.com/ui/media/walk.c.txt***/
+
+
+int isDir(const char *file_path)
+{
+	struct stat s;
+	stat(file_path, &s);
+	return S_ISDIR(s.st_mode);
+}
+
+
+void walkDir(const char *basedir, char* fullpaths[100])
+{
+	DIR *dir;
+	
+	struct dirent *ent;
+	
+	dir = opendir(basedir);
+	
+	if(dir != NULL)
+	{
+		printf("\n\tWalking \"%s\"\n", basedir);
+		
+		while((ent = readdir(dir)) != NULL)
+		{
+			// do not allow "." or ".."
+			if(strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0)
+			{
+				continue;
+			}
+			
+			char entpath[100];
+			strcat(entpath, basedir);
+			strcat(entpath, "\\");
+			strcat(entpath, ent->d_name);
+			
+			if(isDir(entpath)) // directory
+			{
+				printf("\n\tDIR: %s\n", ent->d_name);
+				
+				// directory, walk it
+				walkDir(entpath,  fullpaths);
+			}
+			else // file
+			{
+				printf("\n\tFILE: %s\n", ent->d_name);
+				*fullpaths = (char*) malloc(sizeof(entpath));
+				*fullpaths = entpath;
+				fullpaths++;
+			}
+		}
+		
+		closedir(dir);
+	}
+	else
+	{
+		fprintf(stderr, "\nFailed to walk directory \"%s\"\n", basedir);
+	
+		perror("opendir()");
+		
+	}
+	
+}
+
+/** END OF CODE SNIPPET**/
+
+
+void convert_dhavs_to_mp4(char* in_filename, char* out_filename){
+	
 	AVFormatContext *input_format_context = NULL;
 	AVFormatContext *output_format_context = NULL;	
 	int ret;
@@ -49,8 +120,8 @@ void convert_dhav_to_mp4(const char* in_filename, const char* out_filename){
 	}
 	
 	unsigned int number_of_streams = input_format_context->nb_streams;
-	streams_list = av_mallocz_array(number_of_streams, sizeof(*streams_list));
-		
+	streams_list = av_mallocz_array(number_of_streams, sizeof(*streams_list));\
+
 }
 
 typedef struct {
@@ -187,13 +258,24 @@ void write_frames(Frames* frames, char* path) {
 	
     BYTE* content = frame->content;
 	
-	
 	char channel[5];
 	sprintf(channel, "%u", frame->header.channel+1);
 	
 	char curdir[100];
 	
 	getcwd(curdir, sizeof(curdir));
+	
+	
+	if (mkdir(path) == -1) {
+		fprintf(stderr, "directory creating error errno = %d\n", errno);
+		
+	}
+	
+	if (chdir(path) == -1) {
+		fprintf(stderr, "error changing directory errno = %d\n", errno);
+		exit(1);
+	}
+	
 	
 	if (mkdir(channel) == -1) {
 		fprintf(stderr, "directory creating error errno = %d\n", errno);
@@ -204,6 +286,8 @@ void write_frames(Frames* frames, char* path) {
 		fprintf(stderr, "error changing directory errno = %d\n", errno);
 		exit(1);
 	}
+	
+
 	
 	
 	fp = fopen(fname, "wb+");
@@ -438,9 +522,20 @@ int main(int argc, char* argv[]) {
 			printf("moved pos %d \n", pos);
 			write_frames(frames, argv[2]);
 			first_frame_found = 0;
-		} 
+			
+		}
+		
 
 		
+	}
+	char* fullpaths[100];
+	walkDir(argv[2], fullpaths);
+	char outfile[50];
+	while(*fullpaths) {
+		strcat(outfile, *fullpaths);
+		strcat(outfile, ".mp4");
+		convert_dhavs_to_mp4(*fullpaths, outfile);
+		//**fullpaths++;
 	}
 	return 0;
 }
