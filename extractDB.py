@@ -350,12 +350,12 @@ if __name__ == "__main__":
     parser.add_argument("--threaded",help="default non threaded",type=bool)
     parser.add_argument("--verbose", help="enhanced output")
     parser.add_argument("--table", help="extract only a table from a database")
-    parser.add_argument("--format", help="format report of extracted data default xlsx/csv")
+    parser.add_argument("--format", choices=["xlsx, csv"], help="format report of extracted data default xlsx/csv")
     parser.add_argument("--from_table", help="determine the table from which data extraction will start")
     parser.add_argument("--to_table", help="determine the last table which data extraction will terminate")
     parser.add_argument("--skiptables",  help="extract all tables from a database except the ones specified need to be comma seperated!")
     parser.add_argument("--fetchsize", help="how many records will be fetched for each query", type=int)
-    parser.add_argument("--memory", help="reduce memory footprint", type=bool)
+    parser.add_argument("--memory", choices=["yes"], help="reduce memory footprint", type=bool)
     
     args = parser.parse_args()
 
