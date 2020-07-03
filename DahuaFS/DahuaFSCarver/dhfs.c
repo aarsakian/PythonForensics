@@ -15,7 +15,7 @@
 #define FRAME_START_ID "44484156"
 #define SECONDS_DIFF 2
 #define FIRST_FRAME_FLAG 253
-
+#define MAXFILES = 100000
 
 
 typedef struct tm TimeFrame;
@@ -41,13 +41,14 @@ int isDir(const char *file_path)
 }
 
 
-void walkDir(const char *basedir, char* fullpaths[100])
+void walkDir(const char *basedir, char* fullpaths[])
 {
 	DIR *dir;
 	
 	struct dirent *ent;
 	
 	dir = opendir(basedir);
+	int nfile = 0;
 	
 	if(dir != NULL)
 	{
@@ -76,9 +77,9 @@ void walkDir(const char *basedir, char* fullpaths[100])
 			else // file
 			{
 				printf("\n\tFILE: %s\n", ent->d_name);
-				*fullpaths = (char*) malloc(sizeof(entpath));
-				*fullpaths = entpath;
-				fullpaths++;
+				fullpaths[nfile++] = (char*) malloc(sizeof(entpath));
+				fullpaths[nfile] = entpath;
+				
 			}
 		}
 		
@@ -528,14 +529,15 @@ int main(int argc, char* argv[]) {
 
 		
 	}
-	char* fullpaths[100];
+	char* fullpaths[MAXFILES];
 	walkDir(argv[2], fullpaths);
 	char outfile[50];
 	while(*fullpaths) {
 		strcat(outfile, *fullpaths);
 		strcat(outfile, ".mp4");
 		convert_dhavs_to_mp4(*fullpaths, outfile);
-		//**fullpaths++;
+		
+		fullpaths++;
 	}
 	return 0;
 }
