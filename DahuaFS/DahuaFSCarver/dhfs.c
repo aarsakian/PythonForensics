@@ -7,7 +7,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <dirent.h>
-//#include <libavutil/timestamp.h>
+
+#include <libavutil/timestamp.h>
 #include <libavformat/avformat.h>
 
 
@@ -15,7 +16,7 @@
 #define FRAME_START_ID "44484156"
 #define SECONDS_DIFF 2
 #define FIRST_FRAME_FLAG 253
-#define MAXFILES = 100000
+#define MAXFILES  100000
 
 
 typedef struct tm TimeFrame;
@@ -27,6 +28,18 @@ typedef uint8_t BYTE;
 const BYTE True = 1;
 const BYTE False = 0;
 
+
+static void log_packet(const AVFormatContext *fmt_ctx, const AVPacket *pkt, const char *tag)
+{
+    AVRational *time_base = &fmt_ctx->streams[pkt->stream_index]->time_base;
+
+    printf("%s: pts:%s pts_time:%s dts:%s dts_time:%s duration:%s duration_time:%s stream_index:%d\n",
+           tag,
+           av_ts2str(pkt->pts), av_ts2timestr(pkt->pts, time_base),
+           av_ts2str(pkt->dts), av_ts2timestr(pkt->dts, time_base),
+           av_ts2str(pkt->duration), av_ts2timestr(pkt->duration, time_base),
+           pkt->stream_index);
+}
 
 
 
@@ -41,19 +54,17 @@ int isDir(const char *file_path)
 }
 
 
-void walkDir(const char *basedir, char* fullpaths[])
+void walkDir(const char *basedir, char*  (*fullpaths))
 {
 	DIR *dir;
 	
 	struct dirent *ent;
 	
 	dir = opendir(basedir);
-	int nfile = 0;
-	
+	char entpath[100];
 	if(dir != NULL)
 	{
-		printf("\n\tWalking \"%s\"\n", basedir);
-		
+	
 		while((ent = readdir(dir)) != NULL)
 		{
 			// do not allow "." or ".."
@@ -62,24 +73,25 @@ void walkDir(const char *basedir, char* fullpaths[])
 				continue;
 			}
 			
-			char entpath[100];
-			strcat(entpath, basedir);
+			
+			strcpy(entpath, basedir);
 			strcat(entpath, "\\");
-			strcat(entpath, ent->d_name);
+			strncat(entpath, ent->d_name, strlen(ent->d_name));
 			
 			if(isDir(entpath)) // directory
 			{
-				printf("\n\tDIR: %s\n", ent->d_name);
-				
+					
 				// directory, walk it
 				walkDir(entpath,  fullpaths);
 			}
 			else // file
 			{
-				printf("\n\tFILE: %s\n", ent->d_name);
-				fullpaths[nfile++] = (char*) malloc(sizeof(entpath));
-				fullpaths[nfile] = entpath;
-				
+			
+				*fullpaths = (char*) malloc(sizeof(entpath));
+				strcpy(*fullpaths, entpath);
+			   //  printf("\n\tWalking %s  %p address of %p\n", *fullpaths, (void*)fullpaths, (void*)&fullpaths);
+				 fullpaths++;
+		
 			}
 		}
 		
@@ -98,11 +110,21 @@ void walkDir(const char *basedir, char* fullpaths[])
 /** END OF CODE SNIPPET**/
 
 
-void convert_dhavs_to_mp4(char* in_filename, char* out_filename){
-	
+/** CODE SNIPPET FOR REMUXING **/
+
+int convert_dhavs_to_mp4(const char* in_filename, const char* out_filename){
+	AVOutputFormat *ofmt = NULL;
+    AVFormatContext *ifmt_ctx = NULL, *ofmt_ctx = NULL;
+    AVPacket pkt;
+
+    int ret, i;
+    int stream_index = 0;
+    int *stream_mapping = NULL;
+    int stream_mapping_size = 0;
+
 	AVFormatContext *input_format_context = NULL;
 	AVFormatContext *output_format_context = NULL;	
-	int ret;
+
 	int *streams_list = NULL;
 	if ((ret = avformat_open_input(&input_format_context, in_filename, NULL, NULL)) < 0) {
 		fprintf(stderr, "Could not open input file '%s'", in_filename);
@@ -123,6 +145,119 @@ void convert_dhavs_to_mp4(char* in_filename, char* out_filename){
 	unsigned int number_of_streams = input_format_context->nb_streams;
 	streams_list = av_mallocz_array(number_of_streams, sizeof(*streams_list));\
 
+ av_dump_format(ifmt_ctx, 0, in_filename, 0);
+
+    avformat_alloc_output_context2(&ofmt_ctx, NULL, NULL, out_filename);
+    if (!ofmt_ctx) {
+        fprintf(stderr, "Could not create output context\n");
+        ret = AVERROR_UNKNOWN;
+        goto end;
+    }
+
+    stream_mapping_size = ifmt_ctx->nb_streams;
+    stream_mapping = av_mallocz_array(stream_mapping_size, sizeof(*stream_mapping));
+    if (!stream_mapping) {
+        ret = AVERROR(ENOMEM);
+        goto end;
+    }
+
+    ofmt = ofmt_ctx->oformat;
+
+    for (i = 0; i < ifmt_ctx->nb_streams; i++) {
+        AVStream *out_stream;
+        AVStream *in_stream = ifmt_ctx->streams[i];
+        AVCodecParameters *in_codecpar = in_stream->codecpar;
+
+        if (in_codecpar->codec_type != AVMEDIA_TYPE_AUDIO &&
+            in_codecpar->codec_type != AVMEDIA_TYPE_VIDEO &&
+            in_codecpar->codec_type != AVMEDIA_TYPE_SUBTITLE) {
+            stream_mapping[i] = -1;
+            continue;
+        }
+
+        stream_mapping[i] = stream_index++;
+
+        out_stream = avformat_new_stream(ofmt_ctx, NULL);
+        if (!out_stream) {
+            fprintf(stderr, "Failed allocating output stream\n");
+            ret = AVERROR_UNKNOWN;
+            goto end;
+        }
+
+        ret = avcodec_parameters_copy(out_stream->codecpar, in_codecpar);
+        if (ret < 0) {
+            fprintf(stderr, "Failed to copy codec parameters\n");
+            goto end;
+        }
+        out_stream->codecpar->codec_tag = 0;
+    }
+    av_dump_format(ofmt_ctx, 0, out_filename, 1);
+
+    if (!(ofmt->flags & AVFMT_NOFILE)) {
+        ret = avio_open(&ofmt_ctx->pb, out_filename, AVIO_FLAG_WRITE);
+        if (ret < 0) {
+            fprintf(stderr, "Could not open output file '%s'", out_filename);
+            goto end;
+        }
+    }
+
+    ret = avformat_write_header(ofmt_ctx, NULL);
+    if (ret < 0) {
+        fprintf(stderr, "Error occurred when opening output file\n");
+        goto end;
+    }
+
+    while (1) {
+        AVStream *in_stream, *out_stream;
+
+        ret = av_read_frame(ifmt_ctx, &pkt);
+        if (ret < 0)
+            break;
+
+        in_stream  = ifmt_ctx->streams[pkt.stream_index];
+        if (pkt.stream_index >= stream_mapping_size ||
+            stream_mapping[pkt.stream_index] < 0) {
+            av_packet_unref(&pkt);
+            continue;
+        }
+
+        pkt.stream_index = stream_mapping[pkt.stream_index];
+        out_stream = ofmt_ctx->streams[pkt.stream_index];
+        log_packet(ifmt_ctx, &pkt, "in");
+
+        /* copy packet */
+        pkt.pts = av_rescale_q_rnd(pkt.pts, in_stream->time_base, out_stream->time_base, AV_ROUND_NEAR_INF|AV_ROUND_PASS_MINMAX);
+        pkt.dts = av_rescale_q_rnd(pkt.dts, in_stream->time_base, out_stream->time_base, AV_ROUND_NEAR_INF|AV_ROUND_PASS_MINMAX);
+        pkt.duration = av_rescale_q(pkt.duration, in_stream->time_base, out_stream->time_base);
+        pkt.pos = -1;
+        log_packet(ofmt_ctx, &pkt, "out");
+
+        ret = av_interleaved_write_frame(ofmt_ctx, &pkt);
+        if (ret < 0) {
+            fprintf(stderr, "Error muxing packet\n");
+            break;
+        }
+        av_packet_unref(&pkt);
+    }
+
+    av_write_trailer(ofmt_ctx);
+end:
+
+    avformat_close_input(&ifmt_ctx);
+
+    /* close output */
+    if (ofmt_ctx && !(ofmt->flags & AVFMT_NOFILE))
+        avio_closep(&ofmt_ctx->pb);
+    avformat_free_context(ofmt_ctx);
+
+    av_freep(&stream_mapping);
+
+    if (ret < 0 && ret != AVERROR_EOF) {
+        fprintf(stderr, "Error occurred: %s\n", av_err2str(ret));
+        return 1;
+    }
+
+    return 0;
 }
 
 typedef struct {
@@ -447,7 +582,7 @@ int parseFrames(Frames* frames, BYTE* block_buf, uint32_t * pos, uint8_t *first_
 			frame->end = *pos+rel_pos+headerframe.length;
 			frame->header = headerframe;
 			frame->tail = tailframe;
-			
+			free(frame);
 			
 			if (*first_frame_found) {
 				//	printf("found frame pos rel %d  abs pos %d\n", rel_pos, *pos);
@@ -529,15 +664,23 @@ int main(int argc, char* argv[]) {
 
 		
 	}
-	char* fullpaths[MAXFILES];
+	char** fullpaths;
+		
+	//allocate to HEAP
+	fullpaths = (char**)malloc(MAXFILES*sizeof(char*)); //allocate 
+	
 	walkDir(argv[2], fullpaths);
-	char outfile[50];
-	while(*fullpaths) {
+	char outfile[100];
+	while(*fullpaths!=NULL) {
 		strcat(outfile, *fullpaths);
 		strcat(outfile, ".mp4");
+		printf("converting to %s \n", outfile);
 		convert_dhavs_to_mp4(*fullpaths, outfile);
 		
 		fullpaths++;
 	}
+	
+	free(frames);
+	free(fullpaths);
 	return 0;
 }
