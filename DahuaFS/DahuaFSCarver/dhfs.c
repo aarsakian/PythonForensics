@@ -671,8 +671,13 @@ int main(int argc, char* argv[]) {
 	
 	walkDir(argv[2], fullpaths);
 	char outfile[100];
+	char *temppath;
 	while(*fullpaths!=NULL) {
+	
 		strcat(outfile, *fullpaths);
+		
+		temppath = strtok(outfile, "."); //remove extension
+		strcpy(outfile, temppath);
 		strcat(outfile, ".mp4");
 		printf("converting to %s \n", outfile);
 		convert_dhavs_to_mp4(*fullpaths, outfile);
