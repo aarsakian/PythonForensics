@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -g -Wall
+CFLAGS = -static  -g -Wall 
 
 TARGET = dhfs
 
@@ -12,7 +12,7 @@ INCLUDES =-I $(BASEPATH)\ffmpeg-4.2.2-win64-dev\include
 
 LFLAGS = -L $(BASEPATH)\ffmpeg-4.2.2-win64-dev\lib -L $(BASEPATH)\ffmpeg-4.2.2-win64-dev\lib
 
-LIBS =  -lm -lavformat -lavutil
+LIBS = -lavcodec -Bstatic -lavformat -lavdevice -lavutil -lm
 
 $(TARGET): $(TARGET).c
 	$(CC) $(CFLAGS) $(INCLUDES) -g  $(TARGET).c  -o $(TARGET) $(LFLAGS) $(LIBS)
