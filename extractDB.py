@@ -235,7 +235,7 @@ class CSVWriter(Writer):
         return csv_list
 
     def write(self, data):
-        with open(self.filepath, 'w', newline='', encoding="utf-8") as csvfile:
+        with open(self.filepath, 'a+', newline='', encoding="utf-8") as csvfile:
             tablewriter = csv.writer(csvfile, delimiter=',')
             if MSSQL_INFO["verbosity"]:
                 print ("writing to csv ", len(data), self.filepath)
