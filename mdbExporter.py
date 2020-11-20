@@ -80,8 +80,7 @@ def find_mdb_files(folder):
     for root, dirs, files in os.walk(folder):
         dirs.sort()
         for file in sorted(files):
-          
-            if os.path.splitext(file)[-1] in ALLOWED_FORMATS:
+            if os.path.splitext(file)[-1].lower() in ALLOWED_FORMATS:
                  yield file, root
 
 
