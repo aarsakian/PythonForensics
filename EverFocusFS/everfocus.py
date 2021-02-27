@@ -1,4 +1,3 @@
-
 # fVfE
 import os, datetime, struct, sys, binascii, time
 from struct import unpack 
@@ -16,6 +15,7 @@ logging.basicConfig(filename=logfilename,
                     datefmt='%H:%M:%S',
                     level=logging.DEBUG)
 logger = logging.getLogger(__name__)
+
 
 OUT_PATH = './out/'
 SECONDS_DIFFERENCE = 2
@@ -159,18 +159,23 @@ class Frame:
     def is_first(self):
         if self.signature == b'hBfE': 
             return True
+
         return False
     
     def add_channel(self, buf):
         cam1, _, cam2 = unpack('=8s9s8s', buf)
-        if cam1.startswith(b"Cam") and cam2.startswith(b"Cam"):
-            self.channel = cam1.decode('ascii') + '_' + cam2.decode('ascii')
-        elif cam1.startswith(b"Cam"):
-            self.channel = cam1.decode('ascii')
-        elif cam2.startwith(b"Cam"):
-            self.channel = cam2.decode('ascii')
-
-
+        try:
+            if cam1.startswith(b"Cam") and cam2.startswith(b"Cam"):
+                self.channel = cam1.decode('ascii') + '_' + cam2.decode('ascii')
+            elif cam1.startswith(b"Cam"):
+                self.channel = cam1.decode('ascii')
+            elif cam2.startwith(b"Cam"):
+                self.channel = cam2.decode('ascii')
+        except UnicodeDecodeError:
+            self.channel = "Cam_ch_error"
+            logging.error("Decode error on Cam")
+            
+            
 
 class Parser:
 
@@ -237,7 +242,7 @@ class Parser:
                 previous_frame = frame
                     
                 offset += frame.chunk_size
-            elif frames and frame.has_camera():
+            elif frame.has_camera():
                 next(self.read_co)
                 buffer_out = self.read_co.send((offset, 25))
             
@@ -245,7 +250,7 @@ class Parser:
                
               #  logging.info("located channel {} {}".format(offset, previous_frame.channel))
                 offset += 32
-            elif frames and frame.is_valid():  # valid frame based on signature        
+            elif frame.is_valid():  # valid frame based on signature        
               
                 time_diff =  frame.date - previous_frame.date
                 previous_frame.chunk_size = frame.offset - previous_frame.offset
@@ -304,27 +309,8 @@ def produce_frames(src_file, output_folder, start_offset, end_offset):
     
     return all_frames
 
-if __name__ == '__main__':
-    
-    src_file = sys.argv[1]
-    dst = sys.argv[2]
-    start_offset = int(sys.argv[3])
-    if len(sys.argv)>4:
-        end_offset = int(sys.argv[4])
-    else:
-        end_offset = 0
-    # threaded ###########
-    # queue = Queue()
-    
-    # for i in range(NTHREADS):
-       # thread = Thread(target=consumer_frames, args=(sys.argv[2],))
-       # thread.setDaemon(True)
-       # thread.start()
 
-    # nof_frames = producer_frames(src_file, dst, start_offset, queue)      
-    # queue.join()
-    
-    all_frames = produce_frames(src_file, dst, start_offset, end_offset)
+def merge_and_convert_frames_to_mp4(all_frames):
     files_chain = []
     
     for channel, dates in all_frames.items():
@@ -361,3 +347,39 @@ if __name__ == '__main__':
         consume_frames(files_chain_joined, mp4_file)
             
         files_chain = []
+
+
+
+def merge_and_convert_frames_to_mp4_from_files(dst):
+
+    all_frames = defaultdict(list)
+    for idx, (root, dirs, files) in  enumerate(os.walk(dst)):
+        for file in files:
+           all_frames[dirs[idx]].append(file)
+    
+    merge_and_convert_frames_to_mp4(all_frames)
+            
+
+if __name__ == '__main__':
+    
+    src_file = sys.argv[1]
+    dst = sys.argv[2]
+    start_offset = int(sys.argv[3])
+    if len(sys.argv)>4:
+        end_offset = int(sys.argv[4])
+    else:
+        end_offset = 0
+    # threaded ###########
+    # queue = Queue()
+    
+    # for i in range(NTHREADS):
+       # thread = Thread(target=consumer_frames, args=(sys.argv[2],))
+       # thread.setDaemon(True)
+       # thread.start()
+
+    # nof_frames = producer_frames(src_file, dst, start_offset, queue)      
+    # queue.join()
+    
+    all_frames = produce_frames(src_file, dst, start_offset, end_offset)
+   # merge_and_convert_frames_to_mp4(all_frames)
+    merge_and_convert_frames_to_mp4_from_files(dst)
