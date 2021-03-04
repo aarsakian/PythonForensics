@@ -21,7 +21,17 @@ OUT_PATH = './out/'
 SECONDS_DIFFERENCE = 2
 NTHREADS = 10
 
+MAX_FILE_HANDLES = 490
 
+
+def create_backup_txt_file(files_chain, mp4_file):
+    txt_file = mp4_file.split(".")[0] + ".txt"
+    base_path = os.path.abspath(sys.argv[2])
+    with open(txt_file, 'w') as f:
+        for file in files_chain.split("|"):
+            file = base_path + file
+           
+            f.write('file ' + file.replace('\\', '\\\\').replace(' ', '\ ') + '\n')
 
     
 
@@ -31,13 +41,15 @@ def consumer_frames(output_folder):
         try:
             arv_file, channel = queue.get()
             mp4_file = arv_file.split(".")[0] + ".mp4"
+            
+          
             logging.info("converting file {}".format(arv_file))
             print("converting file {}".format(arv_file))
 
             out, err = ffmpeg.input(os.path.join(output_folder, str(channel), arv_file))\
             .output(os.path.join(output_folder, str(channel), mp4_file))\
             .run(capture_stdout=True, capture_stderr=True)
-           
+      
             #logging.info("out {}".format(out))s
             logging.info("err {}".format(err))
            
@@ -51,19 +63,23 @@ def consumer_frames(output_folder):
 def consume_frames(files_chain, mp4_file):
     
         try:
-          
+                         
+            if not os.path.exists(mp4_file):
             
-            logging.info("converting files {} ".format(mp4_file))
-            print("converting files {}".format(mp4_file))
-         
-            out, err = ffmpeg.input('concat:{}'.format(files_chain)).\
-            output(mp4_file, acodec='copy').run(capture_stdout=True, capture_stderr=True)
-           
-            #logging.info("out {}".format(out))
-            logging.info("err {}".format(err))
+                logging.info("converting files {} ".format(mp4_file))
+                print("converting files {}".format(mp4_file))
+                out, err = ffmpeg.input('concat:{}'.format(files_chain)).\
+                output(mp4_file, acodec='copy').run(capture_stdout=True, capture_stderr=True)
+                print(err)
+            else:
+                print("skipped {}".format(mp4_file))
+                logging.info("file {} already created".format(mp4_file))
+            
            
         except ffmpeg.Error as e:
-            print(e)
+            print(e.stderr.decode('utf8'))
+            logging.info("err {}".format(e.stderr.decode('utf8')))
+            create_backup_txt_file(files_chain, mp4_file)
         finally:
             pass
        
@@ -315,22 +331,24 @@ def merge_and_convert_frames_to_mp4(all_frames):
     
     for channel, dates in all_frames.items():
         dates.sort(key=lambda d:d[0])  # sort by date
+
         prev_date_start, prev_date_end = dates[0]
         
         files_chain.append(os.path.join(dst, channel, to_str(prev_date_start)+ " " + to_str(prev_date_end)+ ".arv"))
-        logging.info("joining {} number of joined frames {}".format(os.path.join(
+        logging.info("first frame joining {} number of joined frames {}".format(os.path.join(
                     dst, channel, to_str(prev_date_start)+ " " + to_str(prev_date_end)+ ".arv"), len(files_chain)))
+      
         if len(dates) > 1:
-                   
+           
             for idx, (date_start, date_end) in enumerate(dates[1:]):
                     time_diff = prev_date_end - date_start
-                    print(time_diff,prev_date_end, date_start)
-                    if  time_diff.seconds > 1: #1 
+                   
+                    if  time_diff.seconds > 1 or len(files_chain) > MAX_FILE_HANDLES:#1 
                         start_date = files_chain[0].split(" ")[0]
                         end_date = files_chain[-1].split(" ")[-1].split(".")[0]
                         mp4_file = os.path.join(start_date + " " + end_date + ".mp4")
                         files_chain_joined = "|".join(files_chain)
-                     
+                    
                         consume_frames(files_chain_joined, mp4_file)
                         files_chain = []    
                    
@@ -339,11 +357,12 @@ def merge_and_convert_frames_to_mp4(all_frames):
                                  format(os.path.join(dst, channel, to_str(date_start)+ " " + to_str(date_end)+ ".arv"), len(files_chain)))
                     prev_date_end = date_end   
         
+        # only one arv non consecutive file
         start_date = files_chain[0].split(" ")[0]
         end_date = files_chain[-1].split(" ")[-1].split(".")[0]
         mp4_file = os.path.join(start_date + " " + end_date + ".mp4")
         files_chain_joined = "|".join(files_chain)
- 
+
         consume_frames(files_chain_joined, mp4_file)
             
         files_chain = []
@@ -353,9 +372,15 @@ def merge_and_convert_frames_to_mp4(all_frames):
 def merge_and_convert_frames_to_mp4_from_files(dst):
 
     all_frames = defaultdict(list)
-    for idx, (root, dirs, files) in  enumerate(os.walk(dst)):
-        for file in files:
-           all_frames[dirs[idx]].append(file)
+    for idx, (root, _, files) in  enumerate(os.walk(dst)):
+        channel = os.path.split(root)[1]
+     
+        for file in files:  
+            if file.endswith("arv"): #skip already created files
+                date_start, date_end = file.split(".")[0].split(" ")
+                
+                all_frames[channel].append((datetime.datetime.strptime(date_start, '%d_%m_%YT%H_%M_%S'),
+                                           datetime.datetime.strptime(date_end, '%d_%m_%YT%H_%M_%S')))
     
     merge_and_convert_frames_to_mp4(all_frames)
             
@@ -380,6 +405,6 @@ if __name__ == '__main__':
     # nof_frames = producer_frames(src_file, dst, start_offset, queue)      
     # queue.join()
     
-    all_frames = produce_frames(src_file, dst, start_offset, end_offset)
+    #all_frames = produce_frames(src_file, dst, start_offset, end_offset)
    # merge_and_convert_frames_to_mp4(all_frames)
     merge_and_convert_frames_to_mp4_from_files(dst)
