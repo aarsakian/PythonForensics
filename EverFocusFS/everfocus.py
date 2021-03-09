@@ -28,7 +28,7 @@ def create_backup_txt_file(files_chain, mp4_file):
     txt_file = mp4_file.split(".")[0] + ".txt"
     base_path = os.path.abspath(sys.argv[2])
     with open(txt_file, 'w') as f:
-        for file in files_chain.split("|"):
+        for file in files_chain:
             file = base_path + file
            
             f.write('file ' + file.replace('\\', '\\\\').replace(' ', '\ ') + '\n')
@@ -60,15 +60,19 @@ def consumer_frames(output_folder):
        
 
 
-def consume_frames(files_chain, mp4_file):
-    
+def consume_frames(files_chain):
+        start_date = files_chain[0].split(" ")[0]
+        end_date = files_chain[-1].split(" ")[-1].split(".")[0]
+        mp4_file = os.path.join(start_date + " " + end_date + ".mp4")
+        files_chain_joined = "|".join(files_chain)
+        
         try:
                          
             if not os.path.exists(mp4_file):
             
                 logging.info("converting files {} ".format(mp4_file))
                 print("converting files {}".format(mp4_file))
-                out, err = ffmpeg.input('concat:{}'.format(files_chain)).\
+                out, err = ffmpeg.input('concat:{}'.format(files_chain_joined)).\
                 output(mp4_file, acodec='copy').run(capture_stdout=True, capture_stderr=True)
                 print(err)
             else:
@@ -78,11 +82,15 @@ def consume_frames(files_chain, mp4_file):
            
         except ffmpeg.Error as e:
             print(e.stderr.decode('utf8'))
-            logging.info("err {}".format(e.stderr.decode('utf8')))
+            logging.error("err {}".format(e.stderr.decode('utf8')))
             create_backup_txt_file(files_chain, mp4_file)
+            if len(files_chain) > 1:
+                logging.info("try again with less frames len {}".format(len(files_chain)))
+                consume_frames(files_chain[1:])
         finally:
             pass
        
+
 
 
 def to_str(date):
@@ -344,12 +352,8 @@ def merge_and_convert_frames_to_mp4(all_frames):
                     time_diff = prev_date_end - date_start
                    
                     if  time_diff.seconds > 1 or len(files_chain) > MAX_FILE_HANDLES:#1 
-                        start_date = files_chain[0].split(" ")[0]
-                        end_date = files_chain[-1].split(" ")[-1].split(".")[0]
-                        mp4_file = os.path.join(start_date + " " + end_date + ".mp4")
-                        files_chain_joined = "|".join(files_chain)
-                    
-                        consume_frames(files_chain_joined, mp4_file)
+                      
+                        consume_frames(files_chain)
                         files_chain = []    
                    
                     files_chain.append(os.path.join(dst, channel, to_str(date_start)+ " " + to_str(date_end)+ ".arv"))  
@@ -358,12 +362,9 @@ def merge_and_convert_frames_to_mp4(all_frames):
                     prev_date_end = date_end   
         
         # only one arv non consecutive file
-        start_date = files_chain[0].split(" ")[0]
-        end_date = files_chain[-1].split(" ")[-1].split(".")[0]
-        mp4_file = os.path.join(start_date + " " + end_date + ".mp4")
-        files_chain_joined = "|".join(files_chain)
 
-        consume_frames(files_chain_joined, mp4_file)
+
+        consume_frames(files_chain)
             
         files_chain = []
 
