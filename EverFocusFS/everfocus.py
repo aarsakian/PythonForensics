@@ -1,5 +1,5 @@
 # fVfE
-import os, datetime, struct, sys, binascii, time
+import os, datetime, struct, sys, binascii, time, subprocess
 from struct import unpack 
 import logging
 import ffmpeg
@@ -22,6 +22,83 @@ SECONDS_DIFFERENCE = 2
 NTHREADS = 10
 
 MAX_FILE_HANDLES = 490
+
+
+def create_srt_file(mp4_file):
+    date_start_, date_end_ = mp4_file.split(".mp4")[0].split(" ")
+    srt_file = mp4_file.replace(".mp4", ".srt")
+    try:
+        result = subprocess.run(['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', mp4_file], 
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        date_start_ = date_start_.split("\\")[-1]
+        date_start = datetime.datetime.strptime(date_start_, '%d_%m_%YT%H_%M_%S')
+        date_end = datetime.datetime.strptime(date_end_, '%d_%m_%YT%H_%M_%S')
+    
+        print('Creating srt for file {}'.format(mp4_file))
+        logging.info('Creating srt for file {}'.format(mp4_file))
+        duration = int(float(result.stdout))
+    except ValueError:
+        logging.error('error when creating srt for file {}'.format(mp4_file))
+        return 
+        
+    with open(srt_file, 'w') as f:
+    
+        for  sec in range(0, duration):
+            start = str(datetime.timedelta(seconds=sec))
+            end =  str(datetime.timedelta(seconds=sec+1))
+            f.write(str(sec+1) + '\n')
+            f.write(start + ' --> ' + end + '\n')
+            f.write('Estimated Time ' + datetime.datetime.strftime(date_start + datetime.timedelta(seconds=sec), '%d/%m/%Y %H:%M:%S') + '\n\n')
+     
+            
+
+def analyze_timestamps(channel, all_frames):
+    files_chain = []
+    
+    for channel, dates in all_frames.items():
+        dates.sort(key=lambda d:d[0])  # sort by date
+
+        prev_date_start, prev_date_end = dates[0]
+      
+        beginning_time = prev_date_start
+        
+        for idx, (date_start, date_end) in enumerate(dates[1:]):
+                    time_diff = prev_date_end - date_start
+                  
+                    if  time_diff.seconds > 1 or time_diff.seconds < -1:#1 
+                        
+                  
+                        last_time = prev_date_end 
+                        logging.info("Ch {} Interval from {} to {}".format(channel, beginning_time, last_time))
+                        beginning_time = date_start
+                    prev_date_start = date_start
+                    prev_date_end = date_end   
+     
+        logging.info("Ch {} Interval from {} to {}".format(channel, beginning_time, date_end))
+
+    
+      
+        
+
+def log_record_times_produce_srt(dst):
+    for idx, (root, _, files) in  enumerate(os.walk(dst)):
+        
+        if "Cam" in root:
+            
+            channel = root.split('\\')[1]
+       # print(channel)
+        all_frames = defaultdict(list)
+        for file in files:  
+            if file.endswith("mp4"):
+                date_start, date_end = file.split(".")[0].split(" ")
+                
+                all_frames[channel].append((datetime.datetime.strptime(date_start, '%d_%m_%YT%H_%M_%S'),
+                                           datetime.datetime.strptime(date_end, '%d_%m_%YT%H_%M_%S')))
+    
+                create_srt_file(os.path.join(root, file))
+               
+        if all_frames:       
+            analyze_timestamps(channel, all_frames)
 
 
 def create_backup_txt_file(files_chain, mp4_file):
@@ -408,4 +485,5 @@ if __name__ == '__main__':
     
     #all_frames = produce_frames(src_file, dst, start_offset, end_offset)
    # merge_and_convert_frames_to_mp4(all_frames)
-    merge_and_convert_frames_to_mp4_from_files(dst)
+   # merge_and_convert_frames_to_mp4_from_files(dst)
+    log_record_times_produce_srt(dst)
