@@ -26,7 +26,7 @@ pylint-flask==0.6
 pylint-plugin-utils==0.6
 pyodbc==4.0.30
 pywin32-ctypes==0.2.0
-PyYAML==5.3.1
+PyYAML==5.4
 requirements-detector==0.7
 setoptconf==0.2.0
 six==1.15.0
